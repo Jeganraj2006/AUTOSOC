@@ -1,0 +1,27 @@
+[project]
+name = "autosoc-normalization"
+version = "0.1.0"
+description = "AutoSOC Normalization Worker"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "pydantic",
+    "pydantic-settings",
+    "uvicorn",
+    "aiokafka",
+    "opensearch-py[async]",
+    "httpx",
+    "autosoc-schemas",
+    "autosoc-api"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autosoc_normalization"]
+
+[tool.uv.sources]
+autosoc-api = { path = "../../apps/api" }
+autosoc-schemas = { path = "../../packages/event-schemas" }

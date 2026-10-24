@@ -1,0 +1,10 @@
+event_id,event_time,source_ip,destination_ip,event_type,status,host,destination_port,service,username,message
+1001,2026-09-01T10:00:00Z,192.168.1.105,10.0.0.12,failed_login,failure,Workstation-01,445,winlogbeat,Administrator,Failed NTLM authentication attempt for Administrator
+1002,2026-09-01T10:00:05Z,192.168.1.105,10.0.0.12,failed_login,failure,Workstation-01,445,winlogbeat,Administrator,Failed NTLM authentication attempt for Administrator
+1003,2026-09-01T10:00:10Z,192.168.1.105,10.0.0.12,failed_login,failure,Workstation-01,445,winlogbeat,Administrator,Failed NTLM authentication attempt for Administrator
+1004,2026-09-01T10:00:15Z,192.168.1.105,10.0.0.12,failed_login,failure,Workstation-01,445,winlogbeat,Administrator,Failed NTLM authentication attempt for Administrator
+1005,2026-09-01T10:00:20Z,192.168.1.105,10.0.0.12,successful_login,success,Workstation-01,445,winlogbeat,Administrator,Successful NTLM authentication for Administrator
+1006,2026-09-01T10:02:00Z,10.0.0.12,10.0.0.12,powershell_exec,success,Workstation-01,0,sysmon,Administrator,powershell.exe -NoP -NonI -W Hidden -Enc QmFzaDY0IEVuY29kZWQgQ29tbWFuZA==
+1007,2026-09-01T10:05:00Z,10.0.0.12,10.0.0.12,lsass_access,success,Workstation-01,0,sysmon,Administrator,mimikatz.exe privilege::debug sekurlsa::logonpasswords
+1008,2026-09-01T10:08:00Z,10.0.0.12,10.0.0.50,smb_exec,success,Workstation-01,445,winlogbeat,Administrator,psexec.exe \\10.0.0.50 -u Administrator -p ***** cmd.exe
+1009,2026-09-01T10:12:00Z,10.0.0.50,198.51.100.44,http_post,success,DC-01,443,zeek,SYSTEM,HTTP POST outbound connection transferring 45MB archive payload to 198.51.100.44

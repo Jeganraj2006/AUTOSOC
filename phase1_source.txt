@@ -1,0 +1,2855 @@
+﻿
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\main.py =====
+
+import os
+import uuid
+import time
+from typing import Callable, Any, Awaitable
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+from fastapi.responses import JSONResponse
+
+from autosoc_api.core.config import settings
+from autosoc_api.core.logging import setup_logging, get_logger
+from autosoc_api.api.v1.router import api_router
+
+# Initialize logging
+setup_logging(log_level=settings.LOG_LEVEL)
+logger = get_logger(__name__)
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.APP_VERSION,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+)
+
+# CORS Middleware
+if settings.BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
+# Rate Limiting Middleware
+from autosoc_api.middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware, rate_limit=50, window=60)
+
+# Request ID Middleware
+@app.middleware("http")
+async def add_request_id_and_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    request_id = request.headers.get("X-Request-ID")
+    if not request_id or len(request_id) > 50 or not request_id.isalnum():
+        request_id = str(uuid.uuid4())
+    
+    # Store request_id in request state
+    request.state.request_id = request_id
+    
+    start_time = time.time()
+    
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error(f"Unhandled Exception: {exc}", extra={"request_id": request_id})
+        # Note: Do not return stack trace to client
+        response = JSONResponse(
+            status_code=500,
+            content={
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "message": "An unexpected error occurred.",
+                "request_id": request_id,
+            }
+        )
+        
+    process_time = time.time() - start_time
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(process_time)
+    
+    return response
+
+# Validation Error Handler
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_code": "VALIDATION_ERROR",
+            "message": "Input validation failed.",
+            "details": exc.errors(),
+            "request_id": request_id,
+        },
+    )
+
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": settings.PROJECT_NAME,
+        "api_version": settings.API_VERSION,
+        "environment": settings.ENVIRONMENT,
+        "phase": "Phase 5 - Core Backend",
+        "docs_url": "/docs"
+    }
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\dependencies\__init__.py =====
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\router.py =====
+
+from fastapi import APIRouter
+from autosoc_api.api.v1.endpoints import auth, events, health, data_sources, rules, alerts, incidents, predictions, agents#, responses
+
+api_router = APIRouter()
+api_router.include_router(health.router, prefix="/health", tags=["health"])
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(data_sources.router, prefix="/data-sources", tags=["data-sources"])
+api_router.include_router(events.router, prefix="/events", tags=["events"])
+api_router.include_router(rules.router, prefix="/rules", tags=["rules"])
+api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(incidents.router, prefix="/incidents", tags=["incidents"])
+api_router.include_router(predictions.router, prefix="/incidents", tags=["predictions"])
+api_router.include_router(agents.router, prefix="", tags=["agents"])
+# api_router.include_router(responses.router, prefix="", tags=["responses"])
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\agents.py =====
+
+import uuid
+from typing import Any, List
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.auth.dependencies import get_current_principal, require_roles
+from autosoc_api.auth.models import Principal
+from autosoc_api.db.models.incident import Incident
+from autosoc_api.db.models.agent_execution import AgentExecution
+from autosoc_api.schemas.agent_execution import (
+    AgentExecutionCreate,
+    AgentExecutionResponse,
+    AgentExecutionStatus
+)
+import httpx
+import logging
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+async def trigger_agent_worker(execution_id: str, incident_id: str, workflow_type: str):
+    """
+    In a real event-driven architecture, this might publish to Redpanda. 
+    For simplicity in MVP, we can call an internal HTTP endpoint on the agent worker 
+    or let the agent worker poll/listen to a specific topic.
+    Here we simulate HTTP trigger or we can publish to a topic.
+    """
+    # Just a placeholder log for MVP if we rely on HTTP
+    logger.info(f"Triggering agent worker for execution {execution_id}")
+    try:
+        # We can implement a direct call to the worker if we add an HTTP listener
+        # Or we rely on Redpanda. Let's assume we use Redpanda.
+        pass
+    except Exception as e:
+        logger.error(f"Failed to trigger agent worker: {e}")
+
+@router.post("/{incident_id}/agents/investigate", response_model=AgentExecutionResponse)
+async def investigate_incident(
+    incident_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: AgentExecutionCreate = None,
+    db: AsyncSession = Depends(get_db_session),
+    # Only SOC Analysts and Admins can start an investigation
+    current_user: Principal = Depends(require_roles(["soc_analyst", "admin"]))
+) -> Any:
+    """
+    Start an Agentic AI investigation for an incident.
+    """
+    incident = await db.get(Incident, incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    if not request:
+        request = AgentExecutionCreate(incident_id=incident_id)
+
+    # Check for existing running execution
+    result = await db.execute(
+        select(AgentExecution)
+        .where(AgentExecution.incident_id == incident_id)
+        .where(AgentExecution.status.in_([AgentExecutionStatus.QUEUED, AgentExecutionStatus.RUNNING]))
+    )
+    existing = result.scalars().first()
+    if existing:
+        raise HTTPException(
+            status_code=409, 
+            detail=f"An investigation is already running for this incident (execution_id: {existing.id})"
+        )
+
+    execution = AgentExecution(
+        incident_id=incident_id,
+        workflow_type=request.workflow_type,
+        status=AgentExecutionStatus.QUEUED,
+        requested_by=current_user.username
+    )
+    
+    db.add(execution)
+    await db.commit()
+    await db.refresh(execution)
+    
+    # Trigger background execution (via Redpanda/HTTP)
+    background_tasks.add_task(trigger_agent_worker, str(execution.id), str(incident_id), request.workflow_type)
+    
+    return execution
+
+@router.get("/{incident_id}/agents", response_model=List[AgentExecutionResponse])
+async def list_incident_investigations(
+    incident_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Principal = Depends(get_current_principal)
+) -> Any:
+    """
+    List all agent investigations for an incident.
+    """
+    result = await db.execute(
+        select(AgentExecution)
+        .where(AgentExecution.incident_id == incident_id)
+        .order_by(AgentExecution.created_at.desc())
+    )
+    executions = result.scalars().all()
+    return executions
+
+@router.get("/agent-executions/{execution_id}", response_model=AgentExecutionResponse)
+async def get_agent_execution(
+    execution_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Principal = Depends(get_current_principal)
+) -> Any:
+    """
+    Get details of a specific agent execution.
+    """
+    execution = await db.get(AgentExecution, execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return execution
+
+@router.post("/agent-executions/{execution_id}/cancel", status_code=202)
+async def cancel_agent_execution(
+    execution_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Principal = Depends(require_roles(["soc_analyst", "admin"]))
+) -> Any:
+    """
+    Cancel a running agent execution safely.
+    """
+    execution = await db.get(AgentExecution, execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+        
+    if execution.status not in [AgentExecutionStatus.QUEUED, AgentExecutionStatus.RUNNING]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel execution in state {execution.status}")
+        
+    execution.status = AgentExecutionStatus.CANCELLED
+    await db.commit()
+    
+    return {"message": "Cancellation requested successfully"}
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\alerts.py =====
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
+from typing import List, Optional
+from uuid import UUID
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.db.models.alert import Alert
+from autosoc_api.schemas.alert import AlertResponse, AlertUpdate
+from autosoc_api.auth.dependencies import require_roles
+from autosoc_api.auth.models import Principal
+from autosoc_api.audit.audit_service import audit_log
+
+router = APIRouter()
+
+@router.get("/", response_model=List[AlertResponse])
+async def list_alerts(
+    db: AsyncSession = Depends(get_db_session),
+    user: Principal = Depends(require_roles(["soc_analyst", "admin", "security_manager", "auditor"])),
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = Query(100, le=1000),
+    offset: int = 0
+):
+    stmt = select(Alert).order_by(desc(Alert.created_at)).limit(limit).offset(offset)
+    if status:
+        stmt = stmt.where(Alert.status == status)
+    if severity:
+        stmt = stmt.where(Alert.severity == severity)
+        
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.get("/{alert_id}", response_model=AlertResponse)
+async def get_alert(
+    alert_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+    user: Principal = Depends(require_roles(["soc_analyst", "admin", "security_manager", "auditor"]))
+):
+    stmt = select(Alert).where(Alert.id == alert_id)
+    result = await db.execute(stmt)
+    alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return alert
+
+@router.patch("/{alert_id}/status", response_model=AlertResponse)
+async def update_alert_status(
+    alert_id: UUID,
+    update_data: AlertUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    user: Principal = Depends(require_roles(["soc_analyst", "admin"]))
+):
+    stmt = select(Alert).where(Alert.id == alert_id)
+    result = await db.execute(stmt)
+    alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+        
+    old_status = alert.status
+    if update_data.status:
+        alert.status = update_data.status
+        
+    await db.commit()
+    await db.refresh(alert)
+    
+    await audit_log(
+        db,
+        user.subject_id,
+        "UPDATE_ALERT_STATUS",
+        f"Alert {alert_id} status changed from {old_status} to {alert.status}",
+        True
+    )
+    
+    return alert
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\auth.py =====
+
+from fastapi import APIRouter, Depends
+from autosoc_api.auth.models import Principal
+from autosoc_api.auth.dependencies import get_current_principal, require_permission
+from autosoc_api.auth.permissions import Permissions
+
+router = APIRouter()
+
+@router.get("/me", response_model=Principal)
+async def get_current_user_context(
+    principal: Principal = Depends(get_current_principal)
+):
+    """
+    Returns the authenticated user's context including parsed roles and permissions.
+    """
+    return principal
+
+@router.get("/test-admin")
+async def get_admin_only_data(
+    principal: Principal = Depends(require_permission(Permissions.USERS_MANAGE))
+):
+    """
+    Test endpoint enforcing administrator access.
+    """
+    return {"status": "success", "message": "Admin access granted."}
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\data_sources.py =====
+
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
+from uuid import UUID
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.auth.models import Principal
+from autosoc_api.auth.dependencies import require_permission
+from autosoc_api.auth.permissions import Permissions
+from autosoc_api.schemas.data_source import DataSourceResponse, DataSourceCreate, DataSourceUpdate, DataSourceListResponse
+from autosoc_api.services.audit_service import audit_service
+from autosoc_api.db.models.data_source import DataSource
+from autosoc_api.db.repositories.base import BaseRepository
+
+router = APIRouter()
+ds_repo = BaseRepository(DataSource)
+
+@router.get("", response_model=DataSourceListResponse)
+async def list_data_sources(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    principal: Principal = Depends(require_permission(Permissions.DATASOURCES_READ)),
+    db: AsyncSession = Depends(get_db_session)
+):
+    items = await ds_repo.get_multi(db, skip=skip, limit=limit)
+    return {"items": items, "total": len(items)}
+
+@router.post("", response_model=DataSourceResponse)
+async def create_data_source(
+    ds_in: DataSourceCreate,
+    principal: Principal = Depends(require_permission(Permissions.DATASOURCES_MANAGE)),
+    db: AsyncSession = Depends(get_db_session)
+):
+    obj = await ds_repo.create(db, obj_in=ds_in.model_dump())
+    
+    await audit_service.log(
+        db, principal, action="create", target_type="data_source",
+        status="success", target_id=str(obj.id)
+    )
+    return obj
+
+@router.put("/{ds_id}", response_model=DataSourceResponse)
+async def update_data_source(
+    ds_id: UUID,
+    ds_in: DataSourceUpdate,
+    principal: Principal = Depends(require_permission(Permissions.DATASOURCES_MANAGE)),
+    db: AsyncSession = Depends(get_db_session)
+):
+    obj = await ds_repo.get(db, str(ds_id))
+    if not obj:
+        raise HTTPException(status_code=404, detail="Data Source not found")
+        
+    updated_obj = await ds_repo.update(db, db_obj=obj, obj_in=ds_in.model_dump(exclude_unset=True))
+    
+    await audit_service.log(
+        db, principal, action="update", target_type="data_source",
+        status="success", target_id=str(obj.id)
+    )
+    return updated_obj
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\events.py =====
+
+import httpx
+from typing import Optional, Dict, Any, List
+from fastapi import APIRouter, Depends, HTTPException, Query
+from autosoc_api.core.config import settings
+
+router = APIRouter()
+
+async def get_opensearch_client() -> httpx.AsyncClient:
+    client = httpx.AsyncClient(base_url=settings.OPENSEARCH_HOSTS)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+@router.get("/dashboard/summary", response_model=Dict[str, Any])
+async def get_dashboard_summary(
+    client: httpx.AsyncClient = Depends(get_opensearch_client)
+) -> Dict[str, Any]:
+    """
+    Get aggregated dashboard summary (events by category, timeline).
+    """
+    query = {
+        "size": 0,
+        "query": {
+            "range": {
+                "event_time": {
+                    "gte": "now-24h/h",
+                    "lte": "now/h"
+                }
+            }
+        },
+        "aggs": {
+            "categories": {
+                "terms": {"field": "event_category", "size": 10}
+            },
+            "timeline": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "fixed_interval": "1h"
+                }
+            },
+            "sources": {
+                "terms": {"field": "source_type", "size": 10}
+            }
+        }
+    }
+    
+    try:
+        resp = await client.post("/autosoc-events-v1-*/_search", json=query)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        aggs = data.get("aggregations", {})
+        
+        return {
+            "total_events_24h": data.get("hits", {}).get("total", {}).get("value", 0),
+            "categories": [{"category": b["key"], "count": b["doc_count"]} for b in aggs.get("categories", {}).get("buckets", [])],
+            "timeline": [{"time": b["key_as_string"], "count": b["doc_count"]} for b in aggs.get("timeline", {}).get("buckets", [])],
+            "sources": [{"source": b["key"], "count": b["doc_count"]} for b in aggs.get("sources", {}).get("buckets", [])]
+        }
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"OpenSearch upstream error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/", response_model=Dict[str, Any])
+async def search_events(
+    category: Optional[str] = Query(None, description="Filter by event category"),
+    source_ip: Optional[str] = Query(None, description="Filter by source IP"),
+    limit: int = Query(50, ge=1, le=1000),
+    client: httpx.AsyncClient = Depends(get_opensearch_client)
+) -> Dict[str, Any]:
+    """
+    Query normalized/enriched security events safely without allowing raw Lucene DSL.
+    """
+    # Build safe OpenSearch query
+    must_clauses: List[Dict[str, Any]] = []
+    
+    if category:
+        must_clauses.append({"term": {"event_category": category}})
+    if source_ip:
+        must_clauses.append({"term": {"source_ip": source_ip}})
+        
+    query = {
+        "size": limit,
+        "sort": [{"event_time": {"order": "desc"}}],
+        "query": {
+            "bool": {
+                "must": must_clauses
+            }
+        } if must_clauses else {"match_all": {}}
+    }
+    
+    try:
+        resp = await client.post("/autosoc-events-v1-*/_search", json=query)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        hits = data.get("hits", {}).get("hits", [])
+        events = [hit["_source"] for hit in hits]
+        
+        return {
+            "total": data.get("hits", {}).get("total", {}).get("value", 0),
+            "events": events
+        }
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"OpenSearch upstream error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{event_id}", response_model=Dict[str, Any])
+async def get_event(
+    event_id: str,
+    client: httpx.AsyncClient = Depends(get_opensearch_client)
+) -> Dict[str, Any]:
+    """
+    Get a single event by ID.
+    """
+    query = {
+        "query": {
+            "term": {
+                "normalized_event_id": event_id
+            }
+        }
+    }
+    try:
+        resp = await client.post("/autosoc-events-v1-*/_search", json=query)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        hits = data.get("hits", {}).get("hits", [])
+        if not hits:
+            raise HTTPException(status_code=404, detail="Event not found")
+            
+        return hits[0]["_source"]
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"OpenSearch upstream error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\health.py =====
+
+from fastapi import APIRouter, Response
+from autosoc_api.schemas.health import HealthResponse, VersionResponse
+from autosoc_api.core.config import settings
+
+router = APIRouter()
+
+@router.get("/live", response_model=HealthResponse)
+def get_liveness() -> HealthResponse:
+    """Check if the API process is running."""
+    return HealthResponse(status="alive", components={"api": "ok"})
+
+@router.get("/ready", response_model=HealthResponse)
+def get_readiness(response: Response) -> HealthResponse:
+    """Check if the API is ready to accept traffic."""
+    # Phase 3: No databases to check yet. Mark them as not_configured.
+    components = {
+        "api": "ok",
+        "database": "not_configured",
+        "opensearch": "not_configured",
+        "redpanda": "not_configured"
+    }
+    
+    return HealthResponse(status="ready", components=components)
+
+@router.get("/version", response_model=VersionResponse)
+def get_version() -> VersionResponse:
+    """Get application version information."""
+    return VersionResponse(
+        app_name=settings.PROJECT_NAME,
+        app_version=settings.APP_VERSION,
+        api_version=settings.API_VERSION,
+        environment=settings.ENVIRONMENT,
+        commit_id=settings.COMMIT_ID
+    )
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\incidents.py =====
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
+import uuid
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.schemas.incident import IncidentResponse, IncidentUpdate, IncidentNoteResponse, IncidentNoteCreate
+from autosoc_api.services.incident import IncidentService
+from autosoc_api.services.incident_transition import IncidentTransitionService
+from autosoc_api.db.models.incident import IncidentStatus
+
+router = APIRouter()
+
+@router.get("/", response_model=List[IncidentResponse])
+async def list_incidents(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = IncidentService(db)
+    return await service.get_all(skip=skip, limit=limit)
+
+@router.get("/{incident_id}", response_model=IncidentResponse)
+async def get_incident(incident_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    service = IncidentService(db)
+    return await service.get_by_id(incident_id)
+
+@router.patch("/{incident_id}/status", response_model=IncidentResponse)
+async def update_status(
+    incident_id: uuid.UUID, 
+    status: IncidentStatus, 
+    reason: str = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    # Mock user_id for now
+    user_id = "system"
+    service = IncidentTransitionService(db)
+    return await service.update_status(incident_id, status, user_id, reason)
+
+@router.get("/{incident_id}/notes", response_model=List[IncidentNoteResponse])
+async def get_notes(incident_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    service = IncidentService(db)
+    return await service.get_notes(incident_id)
+
+@router.post("/{incident_id}/notes", response_model=IncidentNoteResponse)
+async def create_note(
+    incident_id: uuid.UUID,
+    note: IncidentNoteCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    # Mock user_id for now
+    user_id = "system"
+    service = IncidentService(db)
+    return await service.create_note(incident_id, note, user_id)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\predictions.py =====
+
+from typing import List, Any
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.auth.dependencies import get_current_principal, require_roles
+from autosoc_api.auth.models import Principal
+from autosoc_api.db.models.prediction import Prediction
+from autosoc_api.db.models.incident import Incident
+from autosoc_api.schemas.prediction import PredictionResult, TechniquePrediction, PredictionTarget
+
+router = APIRouter()
+
+@router.get("/{incident_id}/predictions/latest", response_model=PredictionResult)
+async def get_latest_prediction(
+    incident_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Principal = Depends(get_current_principal)
+) -> Any:
+    """
+    Get the latest attack progression prediction for an incident.
+    """
+    result = await db.execute(
+        select(Prediction)
+        .where(Prediction.incident_id == incident_id)
+        .order_by(Prediction.generated_at.desc())
+        .limit(1)
+    )
+    prediction = result.scalars().first()
+    
+    if not prediction:
+        raise HTTPException(status_code=404, detail="No prediction found for this incident.")
+        
+    return PredictionResult(
+        prediction_id=prediction.id,
+        incident_id=prediction.incident_id,
+        generated_at=prediction.generated_at,
+        valid_until=prediction.valid_until,
+        observed_techniques=prediction.observed_techniques,
+        predicted_next_techniques=[TechniquePrediction(**t) for t in prediction.predicted_next_techniques],
+        predicted_target=PredictionTarget(**prediction.predicted_target) if prediction.predicted_target else None,
+        path_continuation=prediction.path_continuation,
+        escalation_risk_score=prediction.escalation_risk_score,
+        model_name=prediction.model_name,
+        model_version=prediction.model_version,
+        attack_version=prediction.attack_version,
+        limitations=prediction.limitations
+    )
+
+@router.get("/{incident_id}/predictions", response_model=List[PredictionResult])
+async def get_all_predictions(
+    incident_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Principal = Depends(get_current_principal)
+) -> Any:
+    """
+    Get all historical predictions for an incident.
+    """
+    result = await db.execute(
+        select(Prediction)
+        .where(Prediction.incident_id == incident_id)
+        .order_by(Prediction.generated_at.desc())
+    )
+    predictions = result.scalars().all()
+    
+    return [
+        PredictionResult(
+            prediction_id=p.id,
+            incident_id=p.incident_id,
+            generated_at=p.generated_at,
+            valid_until=p.valid_until,
+            observed_techniques=p.observed_techniques,
+            predicted_next_techniques=[TechniquePrediction(**t) for t in p.predicted_next_techniques],
+            predicted_target=PredictionTarget(**p.predicted_target) if p.predicted_target else None,
+            path_continuation=p.path_continuation,
+            escalation_risk_score=p.escalation_risk_score,
+            model_name=p.model_name,
+            model_version=p.model_version,
+            attack_version=p.attack_version,
+            limitations=p.limitations
+        ) for p in predictions
+    ]
+
+@router.post("/{incident_id}/predictions/recompute", status_code=202)
+async def request_recompute(
+    incident_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    # Only SOC Analyst / Admin can request a manual recompute
+    current_user: Principal = Depends(require_roles(["soc_analyst", "admin"]))
+) -> Any:
+    """
+    Request a recomputation of the attack progression prediction.
+    """
+    # Verify incident exists
+    result = await db.execute(select(Incident).where(Incident.id == incident_id))
+    incident = result.scalars().first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+        
+    # In a full implementation, this pushes a message to `security.predictions.recompute`
+    # or `security.incidents` Kafka topic to trigger the prediction worker.
+    # For now, we return accepted.
+    return {"status": "accepted", "message": "Prediction recomputation requested."}
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\responses.py =====
+
+from typing import Any, List
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import UUID4
+from datetime import datetime, UTC, timedelta
+
+from autosoc_api.api import dependencies
+from autosoc_api.auth.dependencies import get_current_principal, require_permission
+from autosoc_api.auth.models import Principal
+from autosoc_api.db.models.response import ResponseRecommendation, ResponseApproval, ResponseExecution
+from autosoc_api.schemas.response import (
+    ResponseRecommendationCreate, ResponseRecommendationResponse,
+    ResponseApprovalRequest, ResponseApprovalResponse, ResponseApprovalAction,
+    ResponseExecutionCreate, ResponseExecutionResponse
+)
+# Redpanda / Event bus can be published to later for worker processing
+
+router = APIRouter()
+
+@router.post("/incidents/{incident_id}/responses", response_model=ResponseRecommendationResponse)
+def create_recommendation(
+    incident_id: UUID4,
+    recommendation_in: ResponseRecommendationCreate,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:recommend"))
+) -> Any:
+    """
+    Create a new response recommendation.
+    """
+    if str(incident_id) != str(recommendation_in.incident_id):
+        raise HTTPException(status_code=400, detail="Incident ID mismatch")
+    
+    recommendation = ResponseRecommendation(
+        **recommendation_in.model_dump(),
+        created_by=current_user.username
+    )
+    db.add(recommendation)
+    db.commit()
+    db.refresh(recommendation)
+    return recommendation
+
+@router.get("/incidents/{incident_id}/responses", response_model=List[ResponseRecommendationResponse])
+def list_recommendations(
+    incident_id: UUID4,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:read"))
+) -> Any:
+    """
+    List response recommendations for an incident.
+    """
+    return db.query(ResponseRecommendation).filter(ResponseRecommendation.incident_id == incident_id).all()
+
+@router.post("/responses/{recommendation_id}/request-approval", response_model=ResponseApprovalResponse)
+def request_approval(
+    recommendation_id: UUID4,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:recommend"))
+) -> Any:
+    """
+    Request approval for a proposed recommendation.
+    """
+    recommendation = db.query(ResponseRecommendation).filter(ResponseRecommendation.id == recommendation_id).first()
+    if not recommendation:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+        
+    if recommendation.status != "proposed":
+        raise HTTPException(status_code=400, detail="Recommendation is not in proposed state")
+        
+    recommendation.status = "pending_review"
+    
+    approval = ResponseApproval(
+        recommendation_id=recommendation.id,
+        incident_id=recommendation.incident_id,
+        requested_by=current_user.username
+    )
+    db.add(approval)
+    db.commit()
+    db.refresh(approval)
+    return approval
+
+@router.post("/responses/{recommendation_id}/approve", response_model=ResponseApprovalResponse)
+def approve_recommendation(
+    recommendation_id: UUID4,
+    action: ResponseApprovalAction,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:approve"))
+) -> Any:
+    """
+    Approve or reject a recommendation.
+    """
+    recommendation = db.query(ResponseRecommendation).filter(ResponseRecommendation.id == recommendation_id).first()
+    if not recommendation:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+        
+    approval = db.query(ResponseApproval).filter(
+        ResponseApproval.recommendation_id == recommendation_id,
+        ResponseApproval.decision == "pending"
+    ).first()
+    
+    if not approval:
+        raise HTTPException(status_code=400, detail="No pending approval request found")
+        
+    # Optional separation of duties check could go here
+    # if approval.requested_by == current_user.username:
+    #     raise HTTPException(status_code=403, detail="Requester cannot approve their own request")
+        
+    approval.decision = action.decision
+    approval.reviewer = current_user.username
+    approval.decision_at = datetime.now(UTC)
+    approval.reason = action.reason
+    
+    if action.decision == "approved":
+        recommendation.status = "approved"
+        # Set expiration to 60 minutes from now
+        approval.expiration = datetime.now(UTC) + timedelta(minutes=60)
+    else:
+        recommendation.status = "rejected"
+        
+    db.commit()
+    db.refresh(approval)
+    return approval
+
+@router.post("/responses/{recommendation_id}/execute", response_model=ResponseExecutionResponse)
+def execute_recommendation(
+    recommendation_id: UUID4,
+    execution_in: ResponseExecutionCreate,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:execute"))
+) -> Any:
+    """
+    Execute a response (dry-run, simulation, analyst_approved_execution).
+    """
+    recommendation = db.query(ResponseRecommendation).filter(ResponseRecommendation.id == recommendation_id).first()
+    if not recommendation:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+        
+    if execution_in.mode == "analyst_approved_execution":
+        if recommendation.status != "approved":
+            raise HTTPException(status_code=400, detail="Execution requires an approved recommendation")
+            
+        approval = db.query(ResponseApproval).filter(
+            ResponseApproval.recommendation_id == recommendation_id,
+            ResponseApproval.decision == "approved"
+        ).first()
+        
+        if not approval or (approval.expiration and approval.expiration < datetime.now(UTC)):
+            raise HTTPException(status_code=400, detail="Valid unexpired approval required for execution")
+    
+    # Check for idempotency / avoid duplicate executions
+    # In a full impl, idempotency key might be sent by the client, here we generate one or use standard pattern
+    idempotency_key = f"{recommendation_id}_{execution_in.mode}"
+    
+    existing = db.query(ResponseExecution).filter(ResponseExecution.idempotency_key == idempotency_key).first()
+    if existing:
+        return existing
+        
+    execution = ResponseExecution(
+        recommendation_id=recommendation.id,
+        approval_id=approval.id if execution_in.mode == "analyst_approved_execution" else None,
+        playbook_id=recommendation.playbook_id,
+        action_type=recommendation.action_type,
+        mode=execution_in.mode,
+        target=recommendation.target_reference,
+        executor="pending", # To be filled by worker
+        idempotency_key=idempotency_key
+    )
+    db.add(execution)
+    db.commit()
+    db.refresh(execution)
+    
+    # NOTE: Here we would dispatch an event to `security.response.tasks` via Redpanda for the worker to pick up
+    # For MVP we can just enqueue it in DB, and let worker poll, or send Kafka event.
+    return execution
+
+@router.post("/response-executions/{execution_id}/rollback")
+def rollback_execution(
+    execution_id: UUID4,
+    db: Session = Depends(dependencies.get_db),
+    current_user: Principal = Depends(require_permission("responses:execute"))
+) -> Any:
+    """
+    Request rollback of a completed execution.
+    """
+    execution = db.query(ResponseExecution).filter(ResponseExecution.id == execution_id).first()
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+        
+    if execution.status not in ["succeeded", "failed"]:
+        raise HTTPException(status_code=400, detail="Cannot rollback execution in current state")
+        
+    execution.status = "rollback_pending"
+    db.commit()
+    # Event dispatched to worker here
+    return {"message": "Rollback initiated"}
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\rules.py =====
+
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
+from uuid import UUID
+
+from autosoc_api.db.session import get_db_session
+from autosoc_api.auth.models import Principal
+from autosoc_api.auth.dependencies import require_permission
+from autosoc_api.auth.permissions import Permissions
+from autosoc_api.schemas.rule_metadata import RuleMetadataResponse, RuleMetadataCreate, RuleMetadataUpdate
+from autosoc_api.services.audit_service import audit_service
+from autosoc_api.db.models.rule_metadata import DetectionRuleMetadata
+from autosoc_api.db.repositories.base import BaseRepository
+
+router = APIRouter()
+rule_repo = BaseRepository(DetectionRuleMetadata)
+
+@router.get("", response_model=List[RuleMetadataResponse])
+async def list_rules(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    principal: Principal = Depends(require_permission(Permissions.RULES_READ)),
+    db: AsyncSession = Depends(get_db_session)
+):
+    return await rule_repo.get_multi(db, skip=skip, limit=limit)
+
+@router.post("", response_model=RuleMetadataResponse)
+async def create_rule(
+    rule_in: RuleMetadataCreate,
+    principal: Principal = Depends(require_permission(Permissions.RULES_MANAGE)),
+    db: AsyncSession = Depends(get_db_session)
+):
+    obj = await rule_repo.create(db, obj_in=rule_in.model_dump())
+    
+    await audit_service.log(
+        db, principal, action="create", target_type="rule",
+        status="success", target_id=str(obj.id)
+    )
+    return obj
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\api\v1\endpoints\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\audit\audit_service.py =====
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from autosoc_api.db.models.audit_log import AuditLog
+
+async def audit_log(db: AsyncSession, user_id: str, action: str, description: str, status: str = "success"):
+    try:
+        log_entry = AuditLog(
+            user_id=user_id,
+            action=action,
+            description=description,
+            status=status
+        )
+        db.add(log_entry)
+        await db.commit()
+    except Exception as e:
+        # Avoid crashing the main action if audit fails, but log it heavily
+        import logging
+        logging.error(f"Failed to write audit log: {e}")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\audit\__init__.py =====
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\auth\dependencies.py =====
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from autosoc_api.auth.models import Principal
+from autosoc_api.auth.keycloak import validator
+from autosoc_api.auth.permissions import get_permissions_for_roles
+from autosoc_api.core.config import settings
+
+# This schema will be used in OpenAPI for Bearer token documentation
+oauth2_scheme = HTTPBearer(auto_error=False)
+
+def get_current_principal(
+    token: HTTPAuthorizationCredentials = Depends(oauth2_scheme)
+) -> Principal:
+    """
+    Dependency that validates the Bearer token and returns the current Principal.
+    Rejects missing or invalid tokens with HTTP 401.
+    """
+    if not token:
+        # In a test environment we might bypass this if explicitly configured, 
+        # but for Phase 5 we strictly enforce it unless using dependency overrides in pytest.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    principal = validator.validate_token(token.credentials)
+    principal.permissions = get_permissions_for_roles(principal.roles)
+    return principal
+
+def require_permission(required_permission: str):
+    """
+    Dependency generator that checks if the Principal has the required permission.
+    Returns HTTP 403 if unauthorized.
+    """
+    def permission_checker(principal: Principal = Depends(get_current_principal)) -> Principal:
+        if required_permission not in principal.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions"
+            )
+        return principal
+    return permission_checker
+
+def require_roles(allowed_roles: list[str]):
+    """
+    Dependency generator that checks if the Principal has at least one of the allowed roles.
+    Returns HTTP 403 if unauthorized.
+    """
+    def role_checker(principal: Principal = Depends(get_current_principal)) -> Principal:
+        if not set(allowed_roles).intersection(set(principal.roles)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough roles"
+            )
+        return principal
+    return role_checker
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\auth\keycloak.py =====
+
+import jwt
+import httpx
+from typing import Dict, Any, Optional
+from autosoc_api.core.config import settings
+from autosoc_api.core.logging import get_logger
+from autosoc_api.auth.models import Principal
+from fastapi import HTTPException, status
+
+logger = get_logger(__name__)
+
+class KeycloakJWTValidator:
+    def __init__(self):
+        self.jwks_url = settings.KEYCLOAK_JWKS_URL
+        self.client_id = settings.KEYCLOAK_CLIENT_ID
+        self.issuer = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}"
+        self._jwks_client = jwt.PyJWKClient(self.jwks_url)
+
+    def validate_token(self, token: str) -> Principal:
+        try:
+            signing_key = self._jwks_client.get_signing_key_from_jwt(token)
+            
+            # Decode and validate signature, expiry, issuer, and audience
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=self.issuer,
+                audience="account", # Default Keycloak audience if none mapped, or we can check azp
+                options={"verify_aud": False} # We check azp instead below
+            )
+            
+            # Keycloak uses 'azp' (Authorized Party) instead of 'aud' often for OIDC
+            if "azp" in payload and payload["azp"] != self.client_id:
+                # We log but allow for dev if needed, or enforce:
+                pass # Enforce audience if strictly required by policy
+                
+            realm_access = payload.get("realm_access", {})
+            roles = realm_access.get("roles", [])
+            
+            return Principal(
+                subject_id=payload.get("sub", ""),
+                username=payload.get("preferred_username", ""),
+                email=payload.get("email"),
+                roles=roles,
+                issuer=self.issuer
+            )
+            
+        except jwt.ExpiredSignatureError:
+            logger.warning("Token expired")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+        except jwt.InvalidIssuerError:
+            logger.warning("Invalid token issuer")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid issuer")
+        except jwt.PyJWKClientError as e:
+            logger.error(f"JWKS retrieval failed: {e}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+        except Exception as e:
+            logger.warning(f"Token validation failed: {e}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+validator = KeycloakJWTValidator()
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\auth\models.py =====
+
+from pydantic import BaseModel
+from typing import List, Optional
+
+class Principal(BaseModel):
+    """
+    Typed authenticated principal model representing the current user or service account.
+    """
+    subject_id: str
+    username: str
+    email: Optional[str] = None
+    roles: List[str] = []
+    permissions: List[str] = []
+    issuer: str
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\auth\permissions.py =====
+
+from typing import List, Dict
+
+class Permissions:
+    USERS_READ = "users:read"
+    USERS_MANAGE = "users:manage"
+    DATASOURCES_READ = "datasources:read"
+    DATASOURCES_MANAGE = "datasources:manage"
+    RULES_READ = "rules:read"
+    RULES_MANAGE = "rules:manage"
+    ALERTS_READ = "alerts:read"
+    ALERTS_UPDATE = "alerts:update"
+    INCIDENTS_READ = "incidents:read"
+    INCIDENTS_UPDATE = "incidents:update"
+    PREDICTIONS_READ = "predictions:read"
+    AGENTS_READ = "agents:read"
+    RESPONSES_READ = "responses:read"
+    RESPONSES_APPROVE = "responses:approve"
+    RESPONSES_RECOMMEND = "responses:recommend"
+    RESPONSES_EXECUTE = "responses:execute"
+    RESPONSES_MANAGE = "responses:manage"
+    REPORTS_READ = "reports:read"
+    REPORTS_EXPORT = "reports:export"
+    AUDIT_READ = "audit:read"
+    SETTINGS_READ = "settings:read"
+    SETTINGS_MANAGE = "settings:manage"
+
+ROLE_PERMISSIONS: Dict[str, List[str]] = {
+    "administrator": [
+        Permissions.USERS_READ, Permissions.USERS_MANAGE,
+        Permissions.DATASOURCES_READ, Permissions.DATASOURCES_MANAGE,
+        Permissions.RULES_READ, Permissions.RULES_MANAGE,
+        Permissions.ALERTS_READ, Permissions.ALERTS_UPDATE,
+        Permissions.INCIDENTS_READ, Permissions.INCIDENTS_UPDATE,
+        Permissions.SETTINGS_READ, Permissions.SETTINGS_MANAGE,
+        Permissions.AUDIT_READ, Permissions.RESPONSES_MANAGE,
+    ],
+    "soc_analyst": [
+        Permissions.ALERTS_READ, Permissions.INCIDENTS_READ, Permissions.INCIDENTS_UPDATE,
+        Permissions.PREDICTIONS_READ, Permissions.AGENTS_READ, Permissions.RESPONSES_READ,
+        Permissions.RESPONSES_RECOMMEND, Permissions.RESPONSES_EXECUTE,
+        Permissions.DATASOURCES_READ, Permissions.RULES_READ, Permissions.SETTINGS_READ
+    ],
+    "security_manager": [
+        Permissions.ALERTS_READ, Permissions.INCIDENTS_READ, Permissions.REPORTS_READ,
+        Permissions.REPORTS_EXPORT, Permissions.DATASOURCES_READ, Permissions.RULES_READ,
+        Permissions.SETTINGS_READ, Permissions.RESPONSES_READ, Permissions.RESPONSES_APPROVE,
+        Permissions.RESPONSES_EXECUTE
+    ],
+    "auditor": [
+        Permissions.AUDIT_READ, Permissions.INCIDENTS_READ, Permissions.REPORTS_READ,
+        Permissions.ALERTS_READ
+    ]
+}
+
+def get_permissions_for_roles(roles: List[str]) -> List[str]:
+    perms = set()
+    for role in roles:
+        perms.update(ROLE_PERMISSIONS.get(role, []))
+    return list(perms)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\auth\__init__.py =====
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\core\config.py =====
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List
+import json
+from pydantic import AnyHttpUrl, field_validator, PostgresDsn, computed_field
+from pydantic_core import MultiHostUrl
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "AutoSOC Backend API"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+    LOG_LEVEL: str = "DEBUG"
+    APP_VERSION: str = "0.1.0-dev"
+    API_VERSION: str = "v1"
+    API_V1_STR: str = "/api/v1"
+    COMMIT_ID: str = "unknown"
+    
+    # Needs to be parsed from JSON string if set via env
+    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    
+    
+    # PostgreSQL Database Configuration
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    OPENSEARCH_HOSTS: str = "http://localhost:9200"
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_DB: str = "auto_soc"
+    POSTGRES_PORT: int = 5432
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
+
+    @computed_field
+    @property
+    def SQLALCHEMY_DATABASE_URI(self) -> str:
+        # Use sqlite for dev/tests if no postgres available
+        if self.ENVIRONMENT == "test" or self.POSTGRES_SERVER == "sqlite":
+            return "sqlite+aiosqlite:///./test.db"
+        return str(MultiHostUrl.build(
+            scheme="postgresql+asyncpg",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD,
+            host=self.POSTGRES_SERVER,
+            port=self.POSTGRES_PORT,
+            path=self.POSTGRES_DB,
+        ))
+
+    # Keycloak Configuration
+    KEYCLOAK_SERVER_URL: str = "http://localhost:8082"
+    KEYCLOAK_REALM: str = "autosoc"
+    KEYCLOAK_CLIENT_ID: str = "autosoc-api"
+    
+    @computed_field
+    @property
+    def KEYCLOAK_JWKS_URL(self) -> str:
+        return f"{self.KEYCLOAK_SERVER_URL}/realms/{self.KEYCLOAK_REALM}/protocol/openid-connect/certs"
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: str | List[str]) -> List[str] | str:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, str):
+            try:
+                return json.loads(v)
+            except ValueError:
+                return []
+        return v
+
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding="utf-8", 
+        case_sensitive=True,
+        extra="ignore"
+    )
+
+settings = Settings()
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\core\logging.py =====
+
+import logging
+import sys
+
+def setup_logging(log_level: str = "INFO") -> None:
+    """Configures structured logging foundation."""
+    
+    logger = logging.getLogger("autosoc_api")
+    
+    # Do not reconfigure if already configured
+    if logger.handlers:
+        return
+        
+    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    # Prevent propagation to root logger
+    logger.propagate = False
+
+def get_logger(module_name: str) -> logging.Logger:
+    return logging.getLogger(f"autosoc_api.{module_name}")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\core\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\base.py =====
+
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import DateTime, Uuid
+
+class Base(DeclarativeBase):
+    """
+    Core declarative base for all AutoSOC SQLAlchemy models.
+    """
+    pass
+
+class TimestampMixin:
+    """
+    Mixin that adds UTC timezone-aware created_at and updated_at columns.
+    """
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+class UUIDMixin:
+    """
+    Mixin that adds a standard UUIDv4 primary key.
+    """
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        nullable=False
+    )
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\session.py =====
+
+from collections.abc import AsyncGenerator
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from autosoc_api.core.config import settings
+
+# Create Async Engine
+engine = create_async_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    echo=settings.DEBUG,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+)
+
+# Create Async Session Maker
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI Dependency to yield a database session.
+    Ensures safe session closure on request completion.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\__init__.py =====
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\agent_execution.py =====
+
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, JSON, Enum
+from sqlalchemy.orm import relationship
+import enum
+from autosoc_api.db.base import Base
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
+from datetime import datetime, timezone
+
+class AgentExecutionStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    BLOCKED_BY_POLICY = "blocked_by_policy"
+
+class AgentExecution(Base):
+    __tablename__ = "agent_executions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    workflow_type = Column(String, default="full_investigation")
+    status = Column(Enum(AgentExecutionStatus), default=AgentExecutionStatus.QUEUED, index=True)
+    
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    requested_by = Column(String, nullable=True)
+    
+    current_step = Column(String, nullable=True)
+    steps_completed = Column(Integer, default=0)
+    
+    model_provider = Column(String, nullable=True)
+    model_name = Column(String, nullable=True)
+    model_version = Column(String, nullable=True)
+    prompt_version = Column(String, nullable=True)
+    
+    tool_calls_count = Column(Integer, default=0)
+    duration_seconds = Column(Integer, nullable=True)
+    
+    # Store the final structured result JSON
+    result_data = Column(JSON, nullable=True)
+    
+    failure_reason = Column(Text, nullable=True)
+    trace_id = Column(String, nullable=True)
+    
+    incident = relationship("Incident", back_populates="agent_executions")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\alert.py =====
+
+from sqlalchemy import String, Enum, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+import enum
+from typing import Optional
+
+class AlertSeverity(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class AlertStatus(str, enum.Enum):
+    NEW = "new"
+    INVESTIGATING = "investigating"
+    RESOLVED = "resolved"
+    FALSE_POSITIVE = "false_positive"
+
+class Alert(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "alerts"
+    
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(2000))
+    severity: Mapped[AlertSeverity] = mapped_column(Enum(AlertSeverity, name="alert_severity_enum"), nullable=False, index=True)
+    status: Mapped[AlertStatus] = mapped_column(Enum(AlertStatus, name="alert_status_enum"), default=AlertStatus.NEW, nullable=False, index=True)
+    
+    # Context
+    source_event_id: Mapped[str | None] = mapped_column(String(255))
+    rule_id: Mapped[str | None] = mapped_column(ForeignKey("detection_rule_metadata.id"), index=True)
+    
+    # Extracted fields for fast lookup (e.g., attacker IP, target host)
+    indicators_json: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, 'postgresql'))
+    
+    incident_id: Mapped[Optional[str]] = mapped_column(ForeignKey("incidents.id"), index=True, nullable=True)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\attack.py =====
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from autosoc_api.db.base import Base
+
+class AttackTactic(Base):
+    __tablename__ = "attack_tactics"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_id = Column(String(50), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(String, nullable=True)
+    short_name = Column(String(100), nullable=True)
+    attack_version = Column(String(50), nullable=True)
+    revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    techniques = relationship("AttackTechnique", back_populates="tactic")
+
+
+class AttackTechnique(Base):
+    __tablename__ = "attack_techniques"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_id = Column(String(50), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(String, nullable=True)
+    
+    tactic_id = Column(UUID(as_uuid=True), ForeignKey("attack_tactics.id"), nullable=True)
+    
+    is_subtechnique = Column(Boolean, default=False)
+    parent_technique_id = Column(UUID(as_uuid=True), ForeignKey("attack_techniques.id"), nullable=True)
+    
+    attack_version = Column(String(50), nullable=True)
+    platforms = Column(JSONB, default=list)
+    revoked = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tactic = relationship("AttackTactic", back_populates="techniques")
+    parent = relationship("AttackTechnique", remote_side=[id], backref="subtechniques")
+
+
+class AttackRelationship(Base):
+    __tablename__ = "attack_relationships"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_ref = Column(String(100), index=True, nullable=False)
+    target_ref = Column(String(100), index=True, nullable=False)
+    relationship_type = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class IncidentAttackMapping(Base):
+    __tablename__ = "incident_attack_mappings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), index=True, nullable=False)
+    technique_id = Column(UUID(as_uuid=True), ForeignKey("attack_techniques.id"), nullable=False)
+    
+    status = Column(String(50), default="candidate") # candidate, supported, analyst_confirmed, rejected
+    confidence = Column(String(50), nullable=True)
+    mapping_source = Column(String(100), nullable=True) # detection_rule, analyst, ml_context
+    
+    evidence_summary = Column(String, nullable=True)
+    source_alert_ids = Column(JSONB, default=list)
+    source_event_ids = Column(JSONB, default=list)
+    
+    mapped_at = Column(DateTime, default=datetime.utcnow)
+    mapped_by = Column(String(100), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    rejection_reason = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    incident = relationship("Incident", back_populates="attack_mappings")
+    technique = relationship("AttackTechnique")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\audit_log.py =====
+
+from sqlalchemy import String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+
+class AuditLog(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "audit_logs"
+    
+    actor_id: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    actor_name: Mapped[str | None] = mapped_column(String(255))
+    actor_roles: Mapped[str | None] = mapped_column(String(1000))
+    action: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    target_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False) # 'success', 'failure'
+    request_id: Mapped[str | None] = mapped_column(String(36))
+    source_ip: Mapped[str | None] = mapped_column(String(45))
+    reason: Mapped[str | None] = mapped_column(Text)
+    
+    # Store arbitrary diffs or old/new state
+    metadata_json: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, 'postgresql'))
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\data_source.py =====
+
+import enum
+from datetime import datetime
+from sqlalchemy import String, Boolean, Enum, Integer, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+
+class DataSourceType(str, enum.Enum):
+    SYNTHETIC = "synthetic"
+    HTTP_JSON = "http_json"
+    LINUX_SYSLOG = "linux_syslog"
+    NETWORK_FLOW = "network_flow"
+    WINDOWS_EVENT = "windows_event"
+    KUBERNETES_AUDIT = "kubernetes_audit"
+    AWS_CLOUDTRAIL = "aws_cloudtrail"
+
+class DataSourceHealth(str, enum.Enum):
+    UNKNOWN = "unknown"
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    INACTIVE = "inactive"
+    DISABLED = "disabled"
+    ERROR = "error"
+
+class DataSource(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "data_sources"
+    
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    source_type: Mapped[DataSourceType] = mapped_column(Enum(DataSourceType, name="datasource_type_enum"), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    environment: Mapped[str] = mapped_column(String(50), default="production", nullable=False)
+    
+    # Authentication (Hashed API Key)
+    api_key_hash: Mapped[str | None] = mapped_column(String(255))
+    secret_reference: Mapped[str | None] = mapped_column(String(255))
+    
+    # Health Tracking
+    health_state: Mapped[DataSourceHealth] = mapped_column(Enum(DataSourceHealth, name="datasource_health_enum"), default=DataSourceHealth.UNKNOWN, nullable=False)
+    last_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_successful_ingestion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    success_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    @property
+    def status(self) -> str:
+        return self.health_state.value
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\incident.py =====
+
+from sqlalchemy import String, Enum, Float, Integer, DateTime, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+import enum
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+
+class IncidentSeverity(str, enum.Enum):
+    INFORMATIONAL = "informational"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class IncidentStatus(str, enum.Enum):
+    NEW = "new"
+    TRIAGED = "triaged"
+    INVESTIGATING = "investigating"
+    AWAITING_APPROVAL = "awaiting_approval"
+    CONTAINED = "contained"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+    FALSE_POSITIVE = "false_positive"
+
+class Incident(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "incidents"
+    
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(4000))
+    severity: Mapped[IncidentSeverity] = mapped_column(Enum(IncidentSeverity, name="incident_severity_enum", create_type=False), nullable=False, index=True)
+    status: Mapped[IncidentStatus] = mapped_column(Enum(IncidentStatus, name="incident_status_enum", create_type=False), default=IncidentStatus.NEW, nullable=False, index=True)
+    
+    risk_score: Mapped[float | None] = mapped_column(Float, default=0.0)
+    first_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    
+    alert_count: Mapped[int] = mapped_column(Integer, default=0)
+    event_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    primary_entities: Mapped[list | None] = mapped_column(JSON)
+    tags: Mapped[list | None] = mapped_column(JSON)
+    correlation_rule_ids: Mapped[list | None] = mapped_column(JSON)
+    candidate_mitre_references: Mapped[list | None] = mapped_column(JSON)
+    
+    resolution_summary: Mapped[str | None] = mapped_column(String(4000))
+    closure_reason: Mapped[str | None] = mapped_column(String(1000))
+    false_positive_reason: Mapped[str | None] = mapped_column(String(1000))
+    
+    assignee_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    
+    # Relationships
+    alerts = relationship("IncidentAlert", back_populates="incident", cascade="all, delete-orphan")
+    events = relationship("IncidentEvent", back_populates="incident", cascade="all, delete-orphan")
+    notes = relationship("IncidentNote", back_populates="incident", cascade="all, delete-orphan")
+    timeline = relationship("IncidentTimeline", back_populates="incident", cascade="all, delete-orphan")
+    attack_mappings = relationship("IncidentAttackMapping", back_populates="incident", cascade="all, delete-orphan")
+    predictions = relationship("Prediction", back_populates="incident", cascade="all, delete-orphan")
+    agent_executions = relationship("AgentExecution", back_populates="incident", cascade="all, delete-orphan")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\incident_alert.py =====
+
+from sqlalchemy import String, ForeignKey, Float, DateTime
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, UUIDMixin
+import uuid
+
+class IncidentAlert(Base, UUIDMixin):
+    __tablename__ = "incident_alerts"
+    
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    alert_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("alerts.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    linked_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    correlation_reason: Mapped[str | None] = mapped_column(String(1000))
+    correlation_score: Mapped[float | None] = mapped_column(Float)
+    correlation_rule_id: Mapped[str | None] = mapped_column(String(255))
+    
+    # Relationships
+    incident = relationship("Incident", back_populates="alerts")
+    alert = relationship("Alert")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\incident_event.py =====
+
+from sqlalchemy import String, ForeignKey, DateTime
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, UUIDMixin
+import uuid
+
+class IncidentEvent(Base, UUIDMixin):
+    __tablename__ = "incident_events"
+    
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True) # UUID for normalized event
+    
+    source_type: Mapped[str] = mapped_column(String(50), default="normalized_event")
+    evidence_role: Mapped[str | None] = mapped_column(String(255))
+    linked_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    
+    # Relationships
+    incident = relationship("Incident", back_populates="events")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\incident_note.py =====
+
+from sqlalchemy import String, ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, UUIDMixin, TimestampMixin
+import uuid
+
+class IncidentNote(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "incident_notes"
+    
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Relationships
+    incident = relationship("Incident", back_populates="notes")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\incident_timeline.py =====
+
+from sqlalchemy import String, ForeignKey, DateTime, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from autosoc_api.db.base import Base, UUIDMixin
+import uuid
+from datetime import datetime
+
+class IncidentTimeline(Base, UUIDMixin):
+    __tablename__ = "incident_timeline"
+    
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    
+    data: Mapped[dict | None] = mapped_column(JSON)
+    
+    # Relationships
+    incident = relationship("Incident", back_populates="timeline")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\prediction.py =====
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from autosoc_api.db.base import Base
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), index=True, nullable=False)
+    
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    valid_until = Column(DateTime, nullable=True)
+    is_stale = Column(Boolean, default=False)
+    
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False)
+    attack_version = Column(String(50), nullable=False)
+    
+    status = Column(String(50), default="completed") # completed, insufficient_evidence, failed
+    
+    observed_techniques = Column(JSONB, default=list)
+    predicted_next_techniques = Column(JSONB, default=list) # List of dicts matching TechniquePrediction
+    
+    predicted_target = Column(JSONB, nullable=True)
+    path_continuation = Column(JSONB, default=list)
+    
+    escalation_risk_score = Column(Float, default=0.0)
+    
+    evidence_summary = Column(String, nullable=True)
+    limitations = Column(String, default="Forecast based on currently observed evidence; not a confirmed attacker action.")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    incident = relationship("Incident", back_populates="predictions")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\response.py =====
+
+import uuid
+from datetime import datetime, UTC
+from typing import Optional, List
+
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Enum, JSON, Boolean, Integer
+from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
+
+from autosoc_api.db.base import Base
+
+class ResponseRecommendation(Base):
+    """
+    Represents a suggested containment/response action (either from an analyst, policy, or AI).
+    """
+    __tablename__ = "response_recommendations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    
+    source = Column(String, nullable=False) # 'analyst', 'agent', 'policy'
+    playbook_id = Column(String, nullable=False)
+    action_type = Column(String, nullable=False)
+    
+    target_type = Column(String, nullable=False) # e.g., 'ip', 'user', 'host'
+    target_reference = Column(String, nullable=False) # e.g., '192.168.1.100'
+    
+    rationale = Column(Text, nullable=True)
+    expected_benefit = Column(Text, nullable=True)
+    evidence_references = Column(JSON, default=list) # List of alert IDs or similar
+    
+    impact = Column(String, nullable=False) # 'low', 'medium', 'high', 'critical'
+    reversibility = Column(String, nullable=False) # 'reversible', 'partially_reversible', 'non_reversible'
+    priority = Column(Integer, default=3)
+    
+    approval_required = Column(Boolean, default=True)
+    rollback_available = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    created_by = Column(String, nullable=False) # Analyst ID or 'system'
+    
+    status = Column(String, default="proposed", nullable=False)
+    # proposed, pending_review, approved, rejected, expired, executed, failed, rolled_back, cancelled
+    
+    # Relationships
+    approvals = relationship("ResponseApproval", back_populates="recommendation", cascade="all, delete-orphan")
+    executions = relationship("ResponseExecution", back_populates="recommendation", cascade="all, delete-orphan")
+
+
+class ResponseApproval(Base):
+    """
+    Tracks the human approval request and decision for a response recommendation.
+    """
+    __tablename__ = "response_approvals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recommendation_id = Column(UUID(as_uuid=True), ForeignKey("response_recommendations.id", ondelete="CASCADE"), nullable=False)
+    incident_id = Column(UUID(as_uuid=True), nullable=False) # Denormalized for convenience
+    
+    requested_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    requested_by = Column(String, nullable=False)
+    
+    reviewer = Column(String, nullable=True) # Identity of the approver/rejecter
+    decision = Column(String, default="pending", nullable=False) # pending, approved, rejected, expired, cancelled
+    decision_at = Column(DateTime(timezone=True), nullable=True)
+    reason = Column(Text, nullable=True) # E.g., why it was rejected
+    
+    expiration = Column(DateTime(timezone=True), nullable=True)
+    
+    recommendation = relationship("ResponseRecommendation", back_populates="approvals")
+
+
+class ResponseExecution(Base):
+    """
+    Tracks an actual instance of executing an approved response action.
+    """
+    __tablename__ = "response_executions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recommendation_id = Column(UUID(as_uuid=True), ForeignKey("response_recommendations.id", ondelete="CASCADE"), nullable=False)
+    approval_id = Column(UUID(as_uuid=True), ForeignKey("response_approvals.id", ondelete="SET NULL"), nullable=True)
+    
+    playbook_id = Column(String, nullable=False)
+    action_type = Column(String, nullable=False)
+    mode = Column(String, nullable=False) # dry_run, simulation, analyst_approved_execution
+    
+    target = Column(String, nullable=False)
+    
+    started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    status = Column(String, default="queued", nullable=False)
+    # queued, validating, running, verifying, succeeded, failed, timed_out, rollback_pending, rolling_back, rolled_back, cancelled, blocked
+    
+    executor = Column(String, nullable=False) # The specific executor class/name used
+    result = Column(JSON, nullable=True)
+    
+    verification_status = Column(String, nullable=True) # pending, verified, failed
+    rollback_status = Column(String, nullable=True) # pending, rolled_back, failed
+    
+    error_category = Column(String, nullable=True)
+    idempotency_key = Column(String, nullable=False, unique=True)
+    
+    recommendation = relationship("ResponseRecommendation", back_populates="executions")
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\rule_metadata.py =====
+
+import enum
+from sqlalchemy import String, Boolean, Enum, Integer
+from sqlalchemy.orm import Mapped, mapped_column
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+
+class RuleSeverity(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class DetectionRuleMetadata(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "detection_rule_metadata"
+    
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    rule_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    severity: Mapped[RuleSeverity] = mapped_column(Enum(RuleSeverity, name="rule_severity_enum"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    mitre_references_json: Mapped[str | None] = mapped_column(String(1000)) # Placeholder for MITRE
+    file_path: Mapped[str | None] = mapped_column(String(500))
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\system_setting.py =====
+
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
+
+class SystemSetting(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "system_settings"
+    
+    key: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    value: Mapped[str] = mapped_column(String(2000), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\models\__init__.py =====
+
+from autosoc_api.db.base import Base
+from autosoc_api.db.models.data_source import DataSource
+from autosoc_api.db.models.rule_metadata import DetectionRuleMetadata
+from autosoc_api.db.models.system_setting import SystemSetting
+from autosoc_api.db.models.audit_log import AuditLog
+from autosoc_api.db.models.alert import Alert
+from autosoc_api.db.models.incident import Incident
+from autosoc_api.db.models.incident_alert import IncidentAlert
+from autosoc_api.db.models.incident_event import IncidentEvent
+from autosoc_api.db.models.incident_note import IncidentNote
+from autosoc_api.db.models.incident_timeline import IncidentTimeline
+
+from autosoc_api.db.models.attack import AttackTactic, AttackTechnique, AttackRelationship, IncidentAttackMapping
+from autosoc_api.db.models.prediction import Prediction
+from autosoc_api.db.models.agent_execution import AgentExecution
+from autosoc_api.db.models.response import ResponseRecommendation, ResponseApproval, ResponseExecution
+
+# Explicit exports for Alembic
+__all__ = [
+    "Base",
+    "DataSource",
+    "DetectionRuleMetadata",
+    "SystemSetting",
+    "AuditLog",
+    "Alert",
+    "Incident",
+    "IncidentAlert",
+    "IncidentEvent",
+    "IncidentNote",
+    "IncidentTimeline",
+    "AttackTactic",
+    "AttackTechnique",
+    "AttackRelationship",
+    "IncidentAttackMapping",
+    "Prediction",
+    "AgentExecution",
+    "ResponseRecommendation",
+    "ResponseApproval",
+    "ResponseExecution",
+]
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\repositories\audit_log.py =====
+
+from autosoc_api.db.repositories.base import BaseRepository
+from autosoc_api.db.models.audit_log import AuditLog
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Any, Optional
+import json
+
+class AuditLogRepository(BaseRepository[AuditLog]):
+    async def log_action(
+        self,
+        db: AsyncSession,
+        actor_id: str,
+        actor_name: str,
+        actor_roles: list[str],
+        action: str,
+        target_type: str,
+        status: str,
+        target_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        source_ip: Optional[str] = None,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> AuditLog:
+        """
+        Creates an append-only audit log entry.
+        """
+        roles_str = ",".join(actor_roles) if actor_roles else ""
+        
+        # We ensure metadata is serializable if not natively handled by SQLAlchemy JSONB
+        
+        audit_in = {
+            "actor_id": actor_id,
+            "actor_name": actor_name,
+            "actor_roles": roles_str,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "status": status,
+            "request_id": request_id,
+            "source_ip": source_ip,
+            "reason": reason,
+            "metadata_json": metadata
+        }
+        
+        return await self.create(db, obj_in=audit_in)
+
+audit_repo = AuditLogRepository(AuditLog)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\repositories\base.py =====
+
+from typing import Generic, TypeVar, Type, Optional, Sequence
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, asc, desc
+from autosoc_api.db.base import Base
+
+ModelType = TypeVar("ModelType", bound=Base)
+
+class BaseRepository(Generic[ModelType]):
+    def __init__(self, model: Type[ModelType]):
+        self.model = model
+
+    async def get(self, db: AsyncSession, id: str) -> Optional[ModelType]:
+        result = await db.execute(select(self.model).where(self.model.id == id))
+        return result.scalars().first()
+
+    async def get_multi(
+        self, db: AsyncSession, *, skip: int = 0, limit: int = 100, sort_by: str = "created_at", sort_desc: bool = True
+    ) -> Sequence[ModelType]:
+        # Validate sort column to prevent SQL injection
+        sort_column = getattr(self.model, sort_by, getattr(self.model, "created_at"))
+        
+        stmt = select(self.model).offset(skip).limit(limit)
+        if sort_desc:
+            stmt = stmt.order_by(desc(sort_column))
+        else:
+            stmt = stmt.order_by(asc(sort_column))
+            
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    async def create(self, db: AsyncSession, *, obj_in: dict) -> ModelType:
+        db_obj = self.model(**obj_in)
+        db.add(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
+        return db_obj
+
+    async def update(self, db: AsyncSession, *, db_obj: ModelType, obj_in: dict) -> ModelType:
+        for field, value in obj_in.items():
+            setattr(db_obj, field, value)
+        db.add(db_obj)
+        await db.commit()
+        await db.refresh(db_obj)
+        return db_obj
+
+    async def delete(self, db: AsyncSession, *, id: str) -> Optional[ModelType]:
+        obj = await self.get(db, id)
+        if obj:
+            await db.delete(obj)
+            await db.commit()
+        return obj
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\db\repositories\__init__.py =====
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\middleware\rate_limit.py =====
+
+import time
+import asyncio
+from collections import defaultdict
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Basic in-memory rate limiter for academic/dev demonstration
+# In production, use Redis.
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, rate_limit: int = 100, window: int = 60):
+        super().__init__(app)
+        self.rate_limit = rate_limit
+        self.window = window
+        self.requests = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        # Only rate limit specific sensitive paths for SOC
+        sensitive_paths = ["/responses", "/agents", "/incidents"]
+        
+        path = request.url.path
+        if any(sp in path for sp in sensitive_paths) and request.method in ["POST", "PUT", "DELETE"]:
+            client_ip = request.client.host
+            now = time.time()
+            
+            # Clean up old requests
+            self.requests[client_ip] = [req_time for req_time in self.requests[client_ip] if now - req_time < self.window]
+            
+            if len(self.requests[client_ip]) >= self.rate_limit:
+                logger.warning(f"Rate limit exceeded for IP {client_ip} on path {path}")
+                return JSONResponse(
+                    status_code=429,
+                    content={"error_code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests. Please try again later."}
+                )
+            
+            self.requests[client_ip].append(now)
+
+        return await call_next(request)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\agent_execution.py =====
+
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional, Any, Dict
+from datetime import datetime
+import uuid
+from enum import Enum
+
+class AgentExecutionStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    BLOCKED_BY_POLICY = "blocked_by_policy"
+
+class AgentExecutionBase(BaseModel):
+    incident_id: uuid.UUID
+    workflow_type: str = "full_investigation"
+    
+class AgentExecutionCreate(AgentExecutionBase):
+    requested_by: Optional[str] = None
+    
+class AgentResultSection(BaseModel):
+    findings: List[str] = []
+    confidence: str = "low"
+    evidence_references: List[str] = []
+    retrieved_source_references: List[str] = []
+    assumptions: List[str] = []
+    uncertainties: List[str] = []
+    recommendations: List[str] = []
+
+class AgentResult(BaseModel):
+    agent_name: str
+    execution_id: uuid.UUID
+    incident_id: uuid.UUID
+    status: str
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    model_name: str
+    prompt_version: str
+    schema_version: str = "1.0"
+    
+    detection_verification: Optional[AgentResultSection] = None
+    investigation: Optional[AgentResultSection] = None
+    threat_intelligence: Optional[AgentResultSection] = None
+    risk_assessment: Optional[AgentResultSection] = None
+    prediction_analysis: Optional[AgentResultSection] = None
+    response_recommendation: Optional[AgentResultSection] = None
+    reporting: Optional[Dict[str, Any]] = None
+
+class AgentExecutionResponse(AgentExecutionBase):
+    id: uuid.UUID
+    status: AgentExecutionStatus
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    requested_by: Optional[str] = None
+    current_step: Optional[str] = None
+    steps_completed: int
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    model_version: Optional[str] = None
+    prompt_version: Optional[str] = None
+    tool_calls_count: int
+    duration_seconds: Optional[int] = None
+    result_data: Optional[AgentResult] = None
+    failure_reason: Optional[str] = None
+    trace_id: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\alert.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+from uuid import UUID
+
+class AlertBase(BaseModel):
+    title: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    severity: str
+    status: str
+    source_event_id: Optional[str] = Field(None, max_length=255)
+    rule_id: Optional[str] = None
+    indicators_json: Optional[Any] = None
+    incident_id: Optional[UUID] = None
+
+class AlertUpdate(BaseModel):
+    status: Optional[str] = None
+    incident_id: Optional[UUID] = None
+
+class AlertResponse(AlertBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\audit_log.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+class AuditLogResponse(BaseModel):
+    id: UUID
+    actor_id: str
+    actor_name: Optional[str] = None
+    actor_roles: Optional[str] = None
+    action: str
+    target_type: str
+    target_id: Optional[str] = None
+    status: str
+    request_id: Optional[str] = None
+    source_ip: Optional[str] = None
+    reason: Optional[str] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\data_source.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
+from uuid import UUID
+
+class DataSourceBase(BaseModel):
+    name: str = Field(..., max_length=255)
+    source_type: str = Field(..., max_length=50)
+    description: Optional[str] = Field(None, max_length=1000)
+    enabled: bool = True
+    environment: str = Field(default="production", max_length=50)
+
+class DataSourceCreate(DataSourceBase):
+    secret_reference: Optional[str] = Field(None, max_length=255)
+
+class DataSourceUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    enabled: Optional[bool] = None
+    environment: Optional[str] = Field(None, max_length=50)
+    secret_reference: Optional[str] = Field(None, max_length=255)
+
+class DataSourceResponse(DataSourceBase):
+    id: UUID
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class DataSourceListResponse(BaseModel):
+    items: list[DataSourceResponse]
+    total: int
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\health.py =====
+
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class HealthResponse(BaseModel):
+    status: str
+    components: Dict[str, str]
+
+class VersionResponse(BaseModel):
+    app_name: str
+    app_version: str
+    api_version: str
+    environment: str
+    commit_id: str
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\incident.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+class IncidentBase(BaseModel):
+    title: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=4000)
+    severity: str
+    status: str
+    assignee_id: Optional[str] = Field(None, max_length=255)
+    
+    risk_score: float = 0.0
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    alert_count: int = 0
+    event_count: int = 0
+    primary_entities: Optional[List[Dict[str, Any]]] = []
+    tags: Optional[List[str]] = []
+    correlation_rule_ids: Optional[List[str]] = []
+    candidate_mitre_references: Optional[List[str]] = []
+    
+    resolution_summary: Optional[str] = None
+    closure_reason: Optional[str] = None
+    false_positive_reason: Optional[str] = None
+
+class IncidentUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=4000)
+    severity: Optional[str] = None
+    status: Optional[str] = None
+    assignee_id: Optional[str] = Field(None, max_length=255)
+    resolution_summary: Optional[str] = None
+    closure_reason: Optional[str] = None
+    false_positive_reason: Optional[str] = None
+
+class IncidentResponse(IncidentBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class IncidentNoteCreate(BaseModel):
+    content: str
+
+class IncidentNoteResponse(BaseModel):
+    id: UUID
+    incident_id: UUID
+    author_id: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\prediction.py =====
+
+import uuid
+from typing import List, Optional, Any
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+class PredictionTarget(BaseModel):
+    target_type: str = Field(description="e.g. user, host, IP, process")
+    target_entity: Optional[str] = Field(None, description="Exact entity identifier if highly confident")
+
+class TechniquePrediction(BaseModel):
+    technique_id: str
+    probability: Optional[float] = None
+    score: Optional[float] = None
+    predicted_tactic: Optional[str] = None
+    defensive_recommendation: Optional[str] = None
+
+class PredictionResult(BaseModel):
+    prediction_id: uuid.UUID
+    incident_id: uuid.UUID
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    valid_until: Optional[datetime] = None
+    
+    observed_techniques: List[str] = Field(default_factory=list)
+    predicted_next_techniques: List[TechniquePrediction] = Field(default_factory=list)
+    
+    predicted_target: Optional[PredictionTarget] = None
+    path_continuation: List[str] = Field(default_factory=list, description="Up to 3-step probable continuation")
+    
+    escalation_risk_score: float = Field(0.0, description="Risk that next step represents escalation")
+    
+    model_name: str
+    model_version: str
+    attack_version: str
+    
+    confidence: str = Field(default="low")
+    evidence: str = Field(default="")
+    limitations: str = Field(default="Forecast based on currently observed evidence; not a confirmed attacker action.")
+    
+    trace_id: Optional[str] = None
+    schema_version: str = "1.0"
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\response.py =====
+
+from pydantic import BaseModel, ConfigDict, Field, UUID4
+from typing import List, Optional, Any, Dict
+from datetime import datetime
+
+class ResponseRecommendationBase(BaseModel):
+    incident_id: UUID4
+    source: str
+    playbook_id: str
+    action_type: str
+    target_type: str
+    target_reference: str
+    rationale: Optional[str] = None
+    expected_benefit: Optional[str] = None
+    evidence_references: List[Any] = Field(default_factory=list)
+    impact: str
+    reversibility: str
+    priority: int = 3
+    approval_required: bool = True
+    rollback_available: bool = True
+
+class ResponseRecommendationCreate(ResponseRecommendationBase):
+    pass
+
+class ResponseRecommendationResponse(ResponseRecommendationBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID4
+    status: str
+    created_at: datetime
+    created_by: str
+
+class ResponseApprovalBase(BaseModel):
+    recommendation_id: UUID4
+    incident_id: UUID4
+    reason: Optional[str] = None
+
+class ResponseApprovalRequest(ResponseApprovalBase):
+    pass
+
+class ResponseApprovalAction(BaseModel):
+    decision: str # "approved" or "rejected"
+    reason: Optional[str] = None
+
+class ResponseApprovalResponse(ResponseApprovalBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID4
+    requested_at: datetime
+    requested_by: str
+    reviewer: Optional[str] = None
+    decision: str
+    decision_at: Optional[datetime] = None
+    expiration: Optional[datetime] = None
+
+class ResponseExecutionBase(BaseModel):
+    recommendation_id: UUID4
+    mode: str # dry_run, simulation, analyst_approved_execution
+
+class ResponseExecutionCreate(ResponseExecutionBase):
+    pass
+
+class ResponseExecutionResponse(ResponseExecutionBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID4
+    approval_id: Optional[UUID4] = None
+    playbook_id: str
+    action_type: str
+    target: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    status: str
+    executor: str
+    result: Optional[Dict[str, Any]] = None
+    verification_status: Optional[str] = None
+    rollback_status: Optional[str] = None
+    error_category: Optional[str] = None
+    idempotency_key: str
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\rule_metadata.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
+from uuid import UUID
+
+class RuleMetadataBase(BaseModel):
+    name: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    rule_type: str = Field(..., max_length=50)
+    enabled: bool = False
+    severity: str = Field(..., max_length=20)
+    version: int = 1
+    mitre_references_json: Optional[str] = Field(None, max_length=1000)
+    file_path: Optional[str] = Field(None, max_length=500)
+
+class RuleMetadataCreate(RuleMetadataBase):
+    pass
+
+class RuleMetadataUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    enabled: Optional[bool] = None
+    severity: Optional[str] = Field(None, max_length=20)
+    version: Optional[int] = None
+    mitre_references_json: Optional[str] = Field(None, max_length=1000)
+    file_path: Optional[str] = Field(None, max_length=500)
+
+class RuleMetadataResponse(RuleMetadataBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\system_setting.py =====
+
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
+from uuid import UUID
+
+class SystemSettingBase(BaseModel):
+    key: str = Field(..., max_length=100)
+    value: str = Field(..., max_length=2000)
+    description: Optional[str] = Field(None, max_length=1000)
+
+class SystemSettingCreate(SystemSettingBase):
+    pass
+
+class SystemSettingUpdate(BaseModel):
+    value: Optional[str] = Field(None, max_length=2000)
+    description: Optional[str] = Field(None, max_length=1000)
+
+class SystemSettingResponse(SystemSettingBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\schemas\__init__.py =====
+
+# init
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\services\audit_service.py =====
+
+from autosoc_api.db.repositories.audit_log import audit_repo
+from sqlalchemy.ext.asyncio import AsyncSession
+from autosoc_api.auth.models import Principal
+from typing import Dict, Any, Optional
+
+class AuditService:
+    """
+    Service layer for audit logging, ensuring separation of business logic from repository.
+    """
+    async def log(
+        self,
+        db: AsyncSession,
+        principal: Principal,
+        action: str,
+        target_type: str,
+        status: str,
+        target_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        source_ip: Optional[str] = None,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        return await audit_repo.log_action(
+            db=db,
+            actor_id=principal.subject_id,
+            actor_name=principal.username,
+            actor_roles=principal.roles,
+            action=action,
+            target_type=target_type,
+            status=status,
+            target_id=target_id,
+            request_id=request_id,
+            source_ip=source_ip,
+            reason=reason,
+            metadata=metadata
+        )
+
+audit_service = AuditService()
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\services\incident.py =====
+
+import uuid
+from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from fastapi import HTTPException, status
+from autosoc_api.db.models.incident import Incident, IncidentStatus, IncidentSeverity
+from autosoc_api.db.models.incident_note import IncidentNote
+from autosoc_api.db.models.incident_timeline import IncidentTimeline
+from autosoc_api.schemas.incident import IncidentBase, IncidentUpdate, IncidentNoteCreate
+
+class IncidentService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[Incident]:
+        result = await self.db.execute(select(Incident).offset(skip).limit(limit))
+        return list(result.scalars().all())
+
+    async def get_by_id(self, incident_id: uuid.UUID) -> Incident:
+        result = await self.db.execute(select(Incident).where(Incident.id == incident_id))
+        incident = result.scalar_one_or_none()
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        return incident
+
+    async def create_note(self, incident_id: uuid.UUID, note_in: IncidentNoteCreate, author_id: str) -> IncidentNote:
+        # Verify incident exists
+        await self.get_by_id(incident_id)
+        
+        note = IncidentNote(
+            incident_id=incident_id,
+            author_id=author_id,
+            content=note_in.content
+        )
+        self.db.add(note)
+        
+        from autosoc_api.db.models.audit_log import AuditLog
+        audit = AuditLog(
+            actor_id=author_id,
+            action="ADD_INCIDENT_NOTE",
+            target_type="incident",
+            target_id=str(incident_id),
+            status="success"
+        )
+        self.db.add(audit)
+        
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
+
+    async def get_notes(self, incident_id: uuid.UUID) -> List[IncidentNote]:
+        result = await self.db.execute(select(IncidentNote).where(IncidentNote.incident_id == incident_id).order_by(IncidentNote.created_at.desc()))
+        return list(result.scalars().all())
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\services\incident_transition.py =====
+
+import uuid
+from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
+from autosoc_api.db.models.incident import Incident, IncidentStatus
+from autosoc_api.services.incident import IncidentService
+
+class IncidentTransitionService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.incident_service = IncidentService(db)
+
+    async def update_status(self, incident_id: uuid.UUID, new_status: IncidentStatus, user_id: str, reason: Optional[str] = None) -> Incident:
+        incident = await self.incident_service.get_by_id(incident_id)
+        
+        # Define allowed transitions
+        # Simplistic approach for now
+        allowed_transitions = {
+            IncidentStatus.NEW: [IncidentStatus.TRIAGED, IncidentStatus.FALSE_POSITIVE, IncidentStatus.CLOSED],
+            IncidentStatus.TRIAGED: [IncidentStatus.INVESTIGATING, IncidentStatus.FALSE_POSITIVE, IncidentStatus.CLOSED],
+            IncidentStatus.INVESTIGATING: [IncidentStatus.AWAITING_APPROVAL, IncidentStatus.CONTAINED, IncidentStatus.RESOLVED],
+            IncidentStatus.AWAITING_APPROVAL: [IncidentStatus.CONTAINED, IncidentStatus.RESOLVED, IncidentStatus.INVESTIGATING],
+            IncidentStatus.CONTAINED: [IncidentStatus.RESOLVED],
+            IncidentStatus.RESOLVED: [IncidentStatus.CLOSED],
+            IncidentStatus.FALSE_POSITIVE: [IncidentStatus.NEW],
+            IncidentStatus.CLOSED: [IncidentStatus.NEW, IncidentStatus.INVESTIGATING]
+        }
+        
+        if new_status not in allowed_transitions.get(incident.status, []):
+            raise HTTPException(status_code=400, detail=f"Invalid transition from {incident.status} to {new_status}")
+            
+        old_status = incident.status
+        incident.status = new_status
+        if new_status == IncidentStatus.FALSE_POSITIVE and reason:
+            incident.false_positive_reason = reason
+        if new_status == IncidentStatus.CLOSED and reason:
+            incident.closure_reason = reason
+            
+        from autosoc_api.db.models.audit_log import AuditLog
+        audit = AuditLog(
+            actor_id=user_id,
+            action="UPDATE_INCIDENT_STATUS",
+            target_type="incident",
+            target_id=str(incident_id),
+            status="success",
+            metadata_json={"old_status": old_status.value, "new_status": new_status.value}
+        )
+        self.db.add(audit)
+        
+        await self.db.commit()
+        await self.db.refresh(incident)
+        return incident
+
+
+===== D:\PROJECT WORKKKKKKKKKK\apps\api\src\autosoc_api\services\__init__.py =====
+

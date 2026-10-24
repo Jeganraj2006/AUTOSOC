@@ -1,0 +1,24 @@
+# Production Feature Set (Phase 11)
+# Derived from runtime_feature_mapping.yaml and feature_contract.yaml
+features:
+  duration:
+    type: numeric
+    status: available
+  proto_tcp:
+    type: numeric
+    status: available
+  proto_udp:
+    type: numeric
+    status: available
+  fwd_pkts:
+    type: numeric
+    status: available
+  bwd_pkts:
+    type: numeric
+    status: available
+  fwd_bytes:
+    type: numeric
+    status: available
+  bwd_bytes:
+    type: numeric
+    status: available

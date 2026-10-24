@@ -1,0 +1,16 @@
+timestamp,event,src_ip,dst_ip,dst_port,protocol,hostname,username,outcome,message,process_name,file_path
+2026-08-31T10:00:00Z,successful login,192.168.1.50,192.168.1.100,22,ssh,server-01,admin,success,User admin logged in successfully.,sshd,
+2026-08-31T10:05:12Z,failed login,203.0.113.45,192.168.1.100,22,ssh,server-01,root,failure,Failed password for root from 203.0.113.45.,sshd,
+2026-08-31T10:05:14Z,failed login,203.0.113.45,192.168.1.100,22,ssh,server-01,root,failure,Failed password for root from 203.0.113.45.,sshd,
+2026-08-31T10:05:15Z,failed login,203.0.113.45,192.168.1.100,22,ssh,server-01,root,failure,Failed password for root from 203.0.113.45.,sshd,
+2026-08-31T10:05:17Z,repeated failed login,203.0.113.45,192.168.1.100,22,ssh,server-01,root,failure,Maximum authentication attempts exceeded.,sshd,
+2026-08-31T10:10:00Z,network connection,192.168.1.50,8.8.8.8,53,udp,desktop-ab12,,success,DNS query for google.com,svchost.exe,
+2026-08-31T10:12:45Z,port scan,198.51.100.22,192.168.1.200,80,tcp,web-dmz,,failure,Connection refused,nmap,
+2026-08-31T10:12:46Z,port scan,198.51.100.22,192.168.1.200,443,tcp,web-dmz,,failure,Connection refused,nmap,
+2026-08-31T10:12:47Z,port scan,198.51.100.22,192.168.1.200,8080,tcp,web-dmz,,success,Connection established,nmap,
+2026-08-31T10:15:30Z,process execution,192.168.1.150,,,desktop-hr,jsmith,success,PowerShell launched with encoded command.,powershell.exe,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+2026-08-31T10:16:05Z,privilege change,192.168.1.150,,,desktop-hr,jsmith,success,User added to local administrators group.,net.exe,
+2026-08-31T10:18:22Z,credential access,192.168.1.150,,,desktop-hr,SYSTEM,success,LSASS memory dumped.,procdump.exe,C:\Temp\lsass.dmp
+2026-08-31T10:20:10Z,lateral movement,192.168.1.150,192.168.1.10,445,smb,dc-01,jsmith,success,SMB connection established using compromised credentials.,system,
+2026-08-31T10:25:00Z,file access,192.168.1.10,,,dc-01,jsmith,success,Access to sensitive NTDS.dit file.,system,C:\Windows\NTDS\ntds.dit
+2026-08-31T10:30:15Z,outbound transfer,192.168.1.10,203.0.113.99,443,tcp,dc-01,jsmith,success,Large outbound data transfer detected (500MB).,curl.exe,

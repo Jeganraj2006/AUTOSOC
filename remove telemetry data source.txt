@@ -1,0 +1,8 @@
+remove telemetry data source
+automatic detection should happen
+should ingest logs automatically
+need to check whether the anmoly score will keep on changing on alerts page
+in incidents remove, ai agent investingation, attack progression, 
+change ui for predictions as user friendly
+
+Would you like me to connect your RTX 2050 GPU and PyTorch Transformer to the live detection engine?

@@ -1,0 +1,15 @@
+[project]
+name = "autosoc-schemas"
+version = "0.1.0"
+description = "AutoSOC Event Schemas"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autosoc_schemas"]

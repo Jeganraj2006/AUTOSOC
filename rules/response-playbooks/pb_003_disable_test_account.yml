@@ -1,0 +1,32 @@
+playbook_id: "pb_003_disable_test_account"
+name: "Disable Keycloak Test Account"
+version: "1.0.0"
+description: "Disables an identity in the Keycloak mock/dev realm."
+action_type: "disable_account"
+allowed_modes: 
+  - "recommendation"
+  - "dry_run"
+  - "simulation"
+  - "analyst_approved_execution"
+required_permissions: 
+  - "responses:execute"
+supported_target_types: 
+  - "user"
+impact_level: "high"
+reversible: "reversible"
+approval_required: true
+timeout: 60
+max_scope: 1
+preconditions: []
+execution_steps:
+  - executor: "keycloak_disable"
+    arguments: {}
+verification_steps: []
+rollback_steps:
+  - executor: "keycloak_disable"
+    arguments: {}
+evidence_requirements: 
+  - "incident_id"
+tags: 
+  - "containment"
+  - "identity"

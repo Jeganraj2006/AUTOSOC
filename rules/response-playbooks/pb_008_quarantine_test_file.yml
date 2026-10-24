@@ -1,0 +1,32 @@
+playbook_id: "pb_008_quarantine_test_file"
+name: "Quarantine Test File"
+version: "1.0.0"
+description: "Moves a suspected malware file to a controlled quarantine directory."
+action_type: "quarantine_file"
+allowed_modes: 
+  - "recommendation"
+  - "dry_run"
+  - "simulation"
+  - "analyst_approved_execution"
+required_permissions: 
+  - "responses:execute"
+supported_target_types: 
+  - "file"
+impact_level: "medium"
+reversible: "reversible"
+approval_required: true
+timeout: 120
+max_scope: 1
+preconditions: []
+execution_steps:
+  - executor: "file_quarantine"
+    arguments: {}
+verification_steps: []
+rollback_steps:
+  - executor: "file_quarantine"
+    arguments: {}
+evidence_requirements: 
+  - "incident_id"
+tags: 
+  - "containment"
+  - "endpoint"

@@ -1,0 +1,22 @@
+features:
+  duration:
+    status: available
+    mapping: "event.duration if present else 0.0"
+  proto_tcp:
+    status: available
+    mapping: "1 if event.network.protocol == 'tcp' else 0"
+  proto_udp:
+    status: available
+    mapping: "1 if event.network.protocol == 'udp' else 0"
+  fwd_pkts:
+    status: available
+    mapping: "event.network.packets_out"
+  bwd_pkts:
+    status: available
+    mapping: "event.network.packets_in"
+  fwd_bytes:
+    status: available
+    mapping: "event.network.bytes_out"
+  bwd_bytes:
+    status: available
+    mapping: "event.network.bytes_in"

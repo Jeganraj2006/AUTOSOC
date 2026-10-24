@@ -1,0 +1,102 @@
+- rule_id: "auth_001_failed_login_burst"
+  name: "Repeated login failures"
+  description: "Detects multiple failed login attempts from a single source IP within a short timeframe."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "medium"
+  event_categories: ["authentication"]
+  condition:
+    field: "event_outcome"
+    operator: "equals"
+    value: "failure"
+  threshold:
+    count: 5
+    timeframe: 300
+    group_by: ["source_ip", "username"]
+    suppression_window: 1800
+  candidate_mitre_techniques: ["T1110"]
+  investigation_guidance: "Verify if the user was targeted, check source IP reputation, and investigate subsequent successful logins."
+  tags: ["auth", "bruteforce"]
+
+- rule_id: "auth_002_success_after_failures"
+  name: "Successful login after many failures"
+  description: "Detects a successful login following multiple failures (password guessing success)."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "high"
+  event_categories: ["authentication"]
+  condition:
+    AND:
+      - field: "event_outcome"
+        operator: "equals"
+        value: "success"
+      - field: "event_action"
+        operator: "equals"
+        value: "login"
+    # In a full stateful engine, this would query state.
+    # We will approximate this via a specific custom state lookup if needed, but for Phase 9
+    # rule bounds, we can just flag successful logins from known suspicious IPs, or
+    # implement a sequence logic. For simplicity, we flag successful logins that are flagged by a statistical/stateful rule.
+    # To keep it deterministic without sequence syntax, we will flag privileged logins for now as a placeholder, 
+    # OR we handle it via the state manager.
+  candidate_mitre_techniques: ["T1110"]
+
+- rule_id: "auth_003_new_location"
+  name: "Login from newly observed source location"
+  description: "Detects a successful login from a new IP/Country."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "statistical"
+  severity: "low"
+  event_categories: ["authentication"]
+  condition:
+    AND:
+      - field: "event_outcome"
+        operator: "equals"
+        value: "success"
+  threshold:
+    count: 1
+    timeframe: 86400 # 24h
+    group_by: ["username", "source_ip"]
+    suppression_window: 86400
+  candidate_mitre_techniques: ["T1078"]
+
+- rule_id: "auth_004_privileged_login"
+  name: "Privileged account login"
+  description: "Detects interactive login by a privileged account (e.g. root, Administrator)."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "low"
+  event_categories: ["authentication"]
+  condition:
+    AND:
+      - field: "event_outcome"
+        operator: "equals"
+        value: "success"
+      - field: "username"
+        operator: "in"
+        value: ["root", "administrator", "admin"]
+  candidate_mitre_techniques: ["T1078"]
+
+- rule_id: "auth_005_password_spraying"
+  name: "Multiple users targeted from same source"
+  description: "Detects password spraying behavior (many distinct users from 1 IP)."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "high"
+  event_categories: ["authentication"]
+  condition:
+    field: "event_outcome"
+    operator: "equals"
+    value: "failure"
+  threshold:
+    count: 10
+    timeframe: 600
+    # Group by source_ip. (Distinct users would require distinct count, but simple count works if count is high enough).
+    group_by: ["source_ip"]
+    suppression_window: 3600
+  candidate_mitre_techniques: ["T1110.003"]

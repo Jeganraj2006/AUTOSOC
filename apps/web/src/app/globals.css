@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --text-muted: #64748b;
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #e2e8f0;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card-bg: #0f172a;
+  --card-border: #1e293b;
+  --text-muted: #94a3b8;
+  --sidebar-bg: #020617;
+  --sidebar-border: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), Arial, sans-serif;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Glassmorphism & Micro-animations */
+.glass-card {
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.dark .glass-card {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 0 20px rgba(99, 102, 241, 0.1) !important;
+}
+
+/* ------------------------------------------------------------- */
+/* AUTOMATIC LIGHT THEME OVERRIDES (when NOT in .dark mode)     */
+/* ------------------------------------------------------------- */
+html:not(.dark) {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .bg-zinc-950,
+html:not(.dark) .bg-zinc-900,
+html:not(.dark) .bg-black,
+html:not(.dark) \.bg-\[\#0a0e17\],
+html:not(.dark) \.bg-\[\#0b0f19\],
+html:not(.dark) \.bg-\[\#080b12\],
+html:not(.dark) \.bg-\[\#0f172a\] {
+  background-color: #ffffff !important;
+}
+
+html:not(.dark) \.bg-zinc-950\/40,
+html:not(.dark) \.bg-zinc-950\/50,
+html:not(.dark) \.bg-zinc-950\/60,
+html:not(.dark) \.bg-zinc-950\/20,
+html:not(.dark) \.bg-zinc-900\/40,
+html:not(.dark) \.bg-zinc-900\/50,
+html:not(.dark) \.bg-zinc-900\/20,
+html:not(.dark) \.bg-zinc-900\/10,
+html:not(.dark) \.bg-zinc-900\/30,
+html:not(.dark) \.bg-zinc-950\/80 {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) .border-zinc-900,
+html:not(.dark) .border-zinc-800,
+html:not(.dark) .border-zinc-700,
+html:not(.dark) \.border-zinc-900\/50,
+html:not(.dark) \.border-zinc-900\/40,
+html:not(.dark) \.border-zinc-800\/50,
+html:not(.dark) .divide-zinc-900 > * + * {
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) .text-zinc-100,
+html:not(.dark) .text-zinc-200,
+html:not(.dark) .text-zinc-300,
+html:not(.dark) .text-white {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .text-zinc-400 {
+  color: #334155 !important;
+}
+
+html:not(.dark) .text-zinc-500,
+html:not(.dark) .text-zinc-550,
+html:not(.dark) .text-zinc-600,
+html:not(.dark) .text-zinc-650 {
+  color: #64748b !important;
+}
+
+html:not(.dark) \.hover\:bg-zinc-900:hover,
+html:not(.dark) \.hover\:bg-zinc-900\/10:hover,
+html:not(.dark) \.hover\:bg-zinc-900\/40:hover,
+html:not(.dark) \.hover\:bg-zinc-800:hover {
+  background-color: #e2e8f0 !important;
+}
+
+html:not(.dark) input,
+html:not(.dark) textarea,
+html:not(.dark) select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) table {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) tr:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* ------------------------------------------------------------- */
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+
+.pulse-glow {
+  animation: pulseGlow 2s infinite;
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}

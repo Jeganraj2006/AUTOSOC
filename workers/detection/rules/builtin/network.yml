@@ -1,0 +1,92 @@
+- rule_id: "net_001_port_scan"
+  name: "Port scan behavior"
+  description: "Detects rapid connections to many ports on a single host."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "medium"
+  event_categories: ["network"]
+  condition:
+    field: "event_outcome"
+    operator: "not_in"
+    value: ["allowed"]
+  threshold:
+    count: 100
+    timeframe: 60
+    group_by: ["source_ip", "destination_ip"]
+    suppression_window: 3600
+  candidate_mitre_techniques: ["T1046"]
+
+- rule_id: "net_002_many_destinations"
+  name: "Many destination hosts contacted rapidly"
+  description: "Detects one host contacting many unique destinations (e.g. worm, scanner)."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "medium"
+  event_categories: ["network"]
+  condition:
+    field: "event_outcome"
+    operator: "in"
+    value: ["success", "allowed", "unknown"]
+  threshold:
+    count: 200
+    timeframe: 60
+    group_by: ["source_ip"]
+    suppression_window: 3600
+  candidate_mitre_techniques: ["T1046", "T1119"]
+
+- rule_id: "net_003_unusual_outbound"
+  name: "Unusual outbound destination"
+  description: "Detects connection to a historically rare destination."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "statistical"
+  severity: "low"
+  event_categories: ["network"]
+  condition:
+    field: "direction"
+    operator: "equals"
+    value: "outbound"
+  threshold:
+    count: 1
+    timeframe: 604800 # 7 days
+    group_by: ["source_ip", "destination_ip"]
+  candidate_mitre_techniques: ["T1071"]
+
+- rule_id: "net_004_excessive_traffic"
+  name: "Excessive outbound traffic"
+  description: "Detects large outbound data transfers."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "high"
+  event_categories: ["network"]
+  condition:
+    AND:
+      - field: "direction"
+        operator: "equals"
+        value: "outbound"
+      # Just matching large bytes_out for simplicity in standard matching
+      - field: "bytes_out"
+        operator: "regex"
+        value: "^[0-9]{9,}$" # roughly 100MB+ depending on schema type handling (assumes cast to string in our evaluator)
+  candidate_mitre_techniques: ["T1048"]
+
+- rule_id: "net_005_ioc_match"
+  name: "Communication with known IOC address"
+  description: "Detects traffic to/from known malicious IP."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match" # or "ioc" if we had a dedicated list lookup, simulating with match
+  severity: "critical"
+  event_categories: ["network"]
+  condition:
+    OR:
+      - field: "destination_ip"
+        operator: "in"
+        value: ["198.51.100.22", "203.0.113.50"]
+      - field: "source_ip"
+        operator: "in"
+        value: ["198.51.100.22", "203.0.113.50"]
+  candidate_mitre_techniques: ["T1071"]

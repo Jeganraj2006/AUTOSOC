@@ -1,0 +1,60 @@
+- rule_id: "cloud_001_logging_disabled"
+  name: "Cloud logging disabled or modified"
+  description: "Detects actions that disable or modify CloudTrail / CloudWatch."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "high"
+  event_categories: ["cloud"]
+  condition:
+    field: "api_operation"
+    operator: "in"
+    value: ["StopLogging", "DeleteTrail", "UpdateTrail"]
+  candidate_mitre_techniques: ["T1562.001"]
+
+- rule_id: "cloud_002_privileged_iam"
+  name: "Privileged IAM change"
+  description: "Detects creation of admin users or role attachment."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "medium"
+  event_categories: ["cloud"]
+  condition:
+    field: "api_operation"
+    operator: "in"
+    value: ["CreateUser", "AttachUserPolicy", "AttachRolePolicy", "PutUserPolicy"]
+  candidate_mitre_techniques: ["T1098"]
+
+- rule_id: "cloud_003_sg_modified"
+  name: "Security-group/firewall modification"
+  description: "Detects changes to cloud ingress/egress rules."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "low"
+  event_categories: ["cloud"]
+  condition:
+    field: "api_operation"
+    operator: "in"
+    value: ["AuthorizeSecurityGroupIngress", "RevokeSecurityGroupIngress", "DeleteSecurityGroup"]
+  candidate_mitre_techniques: ["T1562.007"]
+
+- rule_id: "cloud_004_api_burst"
+  name: "Unusual cloud API burst"
+  description: "Detects a burst of API calls from a single user."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "medium"
+  event_categories: ["cloud"]
+  condition:
+    field: "event_outcome"
+    operator: "in"
+    value: ["success", "allowed"]
+  threshold:
+    count: 50
+    timeframe: 60
+    group_by: ["username"]
+    suppression_window: 3600
+  candidate_mitre_techniques: ["T1531"]

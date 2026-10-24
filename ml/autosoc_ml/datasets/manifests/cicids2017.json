@@ -1,0 +1,21 @@
+{
+    "dataset_name": "CICIDS2017",
+    "source_url": "https://www.unb.ca/cic/datasets/ids-2017.html",
+    "acquisition_timestamp": "2026-08-09T14:02:53.137356",
+    "version": "1.0-quick-profile",
+    "files": [
+        "CICIDS2017_subset.csv"
+    ],
+    "file_sizes": {
+        "CICIDS2017_subset.csv": 140811
+    },
+    "checksums": {
+        "CICIDS2017_subset.csv": "3d7f19d63202f0d4a74bc3a72e72515580b7cd9137b81921142f34868645d337"
+    },
+    "row_counts": {
+        "CICIDS2017_subset.csv": 600
+    },
+    "label_column": "Label",
+    "license": "Academic",
+    "acquisition_status": "Success (Quick Profile Subset)"
+}

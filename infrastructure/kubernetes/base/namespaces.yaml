@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: autosoc
+  labels:
+    name: autosoc
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: autosoc-observability
+  labels:
+    name: autosoc-observability

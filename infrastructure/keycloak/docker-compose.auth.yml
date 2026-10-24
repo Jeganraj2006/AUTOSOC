@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: autosoc-postgres
+    environment:
+      POSTGRES_DB: autosoc
+      POSTGRES_USER: autosoc_user
+      POSTGRES_PASSWORD: autosoc_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - autosoc-network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: autosoc-keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/autosoc
+      KC_DB_USERNAME: autosoc_user
+      KC_DB_PASSWORD: autosoc_password
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: localhost
+    command: start-dev
+    ports:
+      - "8080:8080"
+      - "8082:8082"
+    depends_on:
+      - postgres
+    networks:
+      - autosoc-network
+
+networks:
+  autosoc-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

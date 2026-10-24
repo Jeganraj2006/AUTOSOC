@@ -1,0 +1,78 @@
+- rule_id: "proc_001_suspicious_admin"
+  name: "Suspicious administrative command execution"
+  description: "Detects usage of whoami, net, or powershell downloading content."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "medium"
+  event_categories: ["process"]
+  condition:
+    OR:
+      - field: "process_name"
+        operator: "in"
+        value: ["whoami.exe", "net.exe", "net1.exe"]
+      - AND:
+          - field: "process_name"
+            operator: "in"
+            value: ["powershell.exe", "pwsh.exe"]
+          - field: "command_line"
+            operator: "regex"
+            value: "(?i)(IEX|Invoke-WebRequest|DownloadString)"
+  candidate_mitre_techniques: ["T1059.001", "T1033"]
+
+- rule_id: "proc_002_rare_process"
+  name: "Rare process execution"
+  description: "Detects a process name never seen before on a specific host."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "statistical"
+  severity: "low"
+  event_categories: ["process"]
+  condition:
+    field: "event_type"
+    operator: "equals"
+    value: "creation"
+  threshold:
+    count: 1
+    timeframe: 2592000 # 30 days
+    group_by: ["hostname", "process_name"]
+  candidate_mitre_techniques: []
+
+- rule_id: "proc_003_unusual_path"
+  name: "Process launched from unusual path"
+  description: "Detects execution from Temp or Public directories."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "high"
+  event_categories: ["process"]
+  condition:
+    OR:
+      - field: "process_path"
+        operator: "contains"
+        value: "\\AppData\\Local\\Temp\\"
+      - field: "process_path"
+        operator: "contains"
+        value: "\\Users\\Public\\"
+      - field: "process_path"
+        operator: "contains"
+        value: "/tmp/"
+  candidate_mitre_techniques: ["T1036"]
+
+- rule_id: "proc_004_suspicious_parent"
+  name: "Suspicious parent-child process relationship"
+  description: "Detects Office applications spawning cmd or powershell."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "critical"
+  event_categories: ["process"]
+  condition:
+    AND:
+      - field: "parent_process_name"
+        operator: "in"
+        value: ["winword.exe", "excel.exe", "powerpnt.exe"]
+      - field: "process_name"
+        operator: "in"
+        value: ["cmd.exe", "powershell.exe", "wscript.exe", "cscript.exe"]
+  candidate_mitre_techniques: ["T1059"]

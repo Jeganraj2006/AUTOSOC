@@ -1,0 +1,81 @@
+- rule_id: "k8s_001_privileged_pod"
+  name: "Privileged pod creation"
+  description: "Detects a pod being created with privileged security context."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "high"
+  event_categories: ["kubernetes"]
+  condition:
+    AND:
+      - field: "api_operation"
+        operator: "equals"
+        value: "create"
+      - field: "resource_type"
+        operator: "equals"
+        value: "pods"
+      # Assuming event_action or message contains privileged flag logic, or raw_event reference for deep inspection.
+      # For Phase 9 matching, we rely on normalized metadata fields.
+      - field: "message"
+        operator: "contains"
+        value: "privileged"
+  candidate_mitre_techniques: ["T1611"]
+
+- rule_id: "k8s_002_sensitive_secret"
+  name: "Sensitive secret access"
+  description: "Detects access to kubernetes secrets."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "medium"
+  event_categories: ["kubernetes"]
+  condition:
+    AND:
+      - field: "api_operation"
+        operator: "equals"
+        value: "get"
+      - field: "resource_type"
+        operator: "equals"
+        value: "secrets"
+  candidate_mitre_techniques: ["T1552.007"]
+
+- rule_id: "k8s_003_sa_abuse"
+  name: "Service-account abuse pattern"
+  description: "Detects a service account performing many distinct denied actions."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "threshold"
+  severity: "high"
+  event_categories: ["kubernetes"]
+  condition:
+    AND:
+      - field: "event_outcome"
+        operator: "equals"
+        value: "denied"
+      - field: "user_type"
+        operator: "equals"
+        value: "service_account"
+  threshold:
+    count: 10
+    timeframe: 60
+    group_by: ["service_account"]
+    suppression_window: 3600
+  candidate_mitre_techniques: ["T1078.003"]
+
+- rule_id: "k8s_004_audit_change"
+  name: "Kubernetes audit logging/security configuration change"
+  description: "Detects changes to cluster RBAC or admission controllers."
+  version: "1.0.0"
+  enabled: true
+  rule_type: "match"
+  severity: "medium"
+  event_categories: ["kubernetes"]
+  condition:
+    AND:
+      - field: "api_operation"
+        operator: "in"
+        value: ["create", "update", "patch"]
+      - field: "resource_type"
+        operator: "in"
+        value: ["clusterroles", "clusterrolebindings", "validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+  candidate_mitre_techniques: ["T1562"]

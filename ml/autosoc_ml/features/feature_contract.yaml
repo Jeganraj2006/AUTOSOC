@@ -1,0 +1,34 @@
+# Common ML Feature Contract
+features:
+  duration:
+    type: numeric
+    description: "Flow duration in seconds"
+    datasets: ["unsw_nb15", "cicids2017", "cic_iot_2023"]
+  proto_tcp:
+    type: numeric
+    description: "Binary indicator if protocol is TCP"
+    datasets: ["unsw_nb15", "cic_iot_2023"]
+  proto_udp:
+    type: numeric
+    description: "Binary indicator if protocol is UDP"
+    datasets: ["unsw_nb15", "cic_iot_2023"]
+  fwd_pkts:
+    type: numeric
+    description: "Total forward packets"
+    datasets: ["unsw_nb15", "cicids2017"]
+  bwd_pkts:
+    type: numeric
+    description: "Total backward packets"
+    datasets: ["unsw_nb15", "cicids2017"]
+  fwd_bytes:
+    type: numeric
+    description: "Total forward bytes"
+    datasets: ["unsw_nb15", "cicids2017"]
+  bwd_bytes:
+    type: numeric
+    description: "Total backward bytes"
+    datasets: ["unsw_nb15", "cicids2017"]
+  label:
+    type: categorical
+    description: "Normalized binary class (benign/attack)"
+    datasets: ["unsw_nb15", "cicids2017", "cic_iot_2023"]

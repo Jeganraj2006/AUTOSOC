@@ -1,0 +1,11 @@
+id: "corr_002_anomaly_exploit"
+name: "Potential Zero-Day Exploit"
+description: "Network anomaly detected followed by unauthorized execution."
+severity: "critical"
+time_window_seconds: 600
+required_entities: 
+  - "target_ip"
+trigger_threshold: 2
+mitre_tactics: 
+  - "T1190"
+  - "T1203"

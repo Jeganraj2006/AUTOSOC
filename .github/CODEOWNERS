@@ -1,0 +1,6 @@
+* @autosoc/maintainers
+
+/apps/web/ @autosoc/frontend
+/apps/api/ @autosoc/backend
+/ml/ @autosoc/data-science
+/infrastructure/ @autosoc/devsecops

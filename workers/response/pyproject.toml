@@ -1,0 +1,23 @@
+[project]
+name = "autosoc-response"
+version = "0.1.0"
+description = "AutoSOC Response Worker for Safe Playbook Execution"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "redis>=5.0.1",
+    "sqlalchemy>=2.0.25",
+    "asyncpg>=0.29.0",
+    "pydantic-settings>=2.1.0",
+    "httpx>=0.26.0"
+]
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autosoc_response"]

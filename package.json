@@ -1,0 +1,27 @@
+{
+  "name": "autosoc-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AutoSOC Agentic AI-Driven Autonomous Security Operations Center",
+  "packageManager": "pnpm@9.6.0",
+  "scripts": {
+    "dev:web": "pnpm -F web dev",
+    "build:web": "pnpm -F web build",
+    "lint:web": "pnpm -F web lint",
+    "typecheck:web": "pnpm -F web typecheck",
+    "test:web": "pnpm -F web test",
+    "e2e:web": "pnpm -F web e2e",
+    "dev:api": "cd apps/api && uv run uvicorn autosoc_api.main:app --reload",
+    "lint:api": "cd apps/api && uv run ruff check .",
+    "format:api": "cd apps/api && uv run ruff format .",
+    "typecheck:api": "cd apps/api && uv run mypy src",
+    "test:api": "cd apps/api && uv run pytest --cov=src",
+    "lint:all": "pnpm lint:web && pnpm lint:api",
+    "test:all": "pnpm test:web && pnpm test:api",
+    "verify:all": "pnpm lint:all && pnpm typecheck:web && pnpm typecheck:api && pnpm test:all"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

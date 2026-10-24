@@ -1,0 +1,14 @@
+{
+  "version": "latest",
+  "source": "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json",
+  "acquisition_timestamp": "2026-08-10T17:57:27.908498+00:00",
+  "sha256": "f7eaf37fe53b50404084fe1fe67237278f7317e61c11ad550295722d13ede259",
+  "stix_version": "2.1",
+  "counts": {
+    "tactics": 15,
+    "techniques": 365,
+    "sub_techniques": 493,
+    "relationships": 21262,
+    "total_objects": 26085
+  }
+}

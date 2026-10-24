@@ -1,0 +1,31 @@
+playbook_id: "pb_001_increase_monitoring"
+name: "Increase Endpoint Monitoring"
+version: "1.0.0"
+description: "Increases telemetry collection on a specific host for deeper investigation."
+action_type: "increase_monitoring"
+allowed_modes: 
+  - "recommendation"
+  - "dry_run"
+  - "simulation"
+  - "analyst_approved_execution"
+required_permissions: 
+  - "responses:execute"
+supported_target_types: 
+  - "host"
+impact_level: "low"
+reversible: "reversible"
+approval_required: false
+timeout: 300
+max_scope: 1
+preconditions: []
+execution_steps:
+  - executor: "simulation_only"
+    arguments: {}
+verification_steps: []
+rollback_steps:
+  - executor: "simulation_only"
+    arguments: {}
+evidence_requirements: []
+tags: 
+  - "monitoring"
+  - "low-impact"

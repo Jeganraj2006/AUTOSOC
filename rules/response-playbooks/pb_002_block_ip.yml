@@ -1,0 +1,32 @@
+playbook_id: "pb_002_block_ip"
+name: "Block Malicious IP"
+version: "1.0.0"
+description: "Blocks an IP address at the perimeter using the mock firewall."
+action_type: "block_ip"
+allowed_modes: 
+  - "recommendation"
+  - "dry_run"
+  - "simulation"
+  - "analyst_approved_execution"
+required_permissions: 
+  - "responses:execute"
+supported_target_types: 
+  - "ip"
+impact_level: "high"
+reversible: "reversible"
+approval_required: true
+timeout: 60
+max_scope: 1
+preconditions: []
+execution_steps:
+  - executor: "mock_firewall"
+    arguments: {}
+verification_steps: []
+rollback_steps:
+  - executor: "mock_firewall"
+    arguments: {}
+evidence_requirements: 
+  - "incident_id"
+tags: 
+  - "containment"
+  - "network"

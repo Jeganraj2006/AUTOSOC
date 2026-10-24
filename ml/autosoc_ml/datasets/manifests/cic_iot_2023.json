@@ -1,0 +1,21 @@
+{
+    "dataset_name": "CIC-IoT2023",
+    "source_url": "https://www.unb.ca/cic/datasets/iotdataset-2023.html",
+    "acquisition_timestamp": "2026-08-09T14:02:53.559246",
+    "version": "1.0-quick-profile",
+    "files": [
+        "CIC_IoT2023_subset.csv"
+    ],
+    "file_sizes": {
+        "CIC_IoT2023_subset.csv": 80289
+    },
+    "checksums": {
+        "CIC_IoT2023_subset.csv": "34bb0edf5b880a02b03830edc4647635fc0176664fe65b9a63c643a6b1503cff"
+    },
+    "row_counts": {
+        "CIC_IoT2023_subset.csv": 600
+    },
+    "label_column": "label",
+    "license": "Academic",
+    "acquisition_status": "Success (Quick Profile Subset)"
+}

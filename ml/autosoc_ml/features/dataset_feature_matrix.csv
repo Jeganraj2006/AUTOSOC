@@ -1,0 +1,9 @@
+feature,unsw_nb15,cicids2017,cic_iot2023,autosoc_normalized
+duration,direct,derived,direct,derived
+proto_tcp,derived,unavailable,direct,derived
+proto_udp,derived,unavailable,direct,derived
+fwd_pkts,direct,direct,unavailable,derived
+bwd_pkts,direct,direct,unavailable,derived
+fwd_bytes,direct,direct,unavailable,derived
+bwd_bytes,direct,direct,unavailable,derived
+label,direct,direct,direct,unavailable

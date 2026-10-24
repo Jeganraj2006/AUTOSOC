@@ -1,0 +1,10 @@
+id: "corr_001_bruteforce_success"
+name: "Brute Force Followed by Success"
+description: "Multiple failed logins followed by a successful login from the same IP within 5 minutes."
+severity: "high"
+time_window_seconds: 300
+required_entities: 
+  - "source_ip"
+trigger_threshold: 3
+mitre_tactics: 
+  - "T1110"

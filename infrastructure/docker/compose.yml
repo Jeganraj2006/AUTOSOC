@@ -1,0 +1,251 @@
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: autosoc-postgres
+    environment:
+      POSTGRES_USER: ${AUTOSOC_POSTGRES_USER:?Set AUTOSOC_POSTGRES_USER in infrastructure/docker/.env}
+      POSTGRES_PASSWORD: ${AUTOSOC_POSTGRES_PASSWORD:?Set AUTOSOC_POSTGRES_PASSWORD in infrastructure/docker/.env}
+      POSTGRES_DB: ${AUTOSOC_POSTGRES_DB:?Set AUTOSOC_POSTGRES_DB in infrastructure/docker/.env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.1
+    container_name: autosoc-keycloak
+    environment:
+      KEYCLOAK_ADMIN: ${AUTOSOC_KEYCLOAK_ADMIN_USER:?Set AUTOSOC_KEYCLOAK_ADMIN_USER in infrastructure/docker/.env}
+      KEYCLOAK_ADMIN_PASSWORD: ${AUTOSOC_KEYCLOAK_ADMIN_PASSWORD:?Set AUTOSOC_KEYCLOAK_ADMIN_PASSWORD in infrastructure/docker/.env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${AUTOSOC_POSTGRES_DB}
+      KC_DB_USERNAME: ${AUTOSOC_POSTGRES_USER}
+      KC_DB_PASSWORD: ${AUTOSOC_POSTGRES_PASSWORD}
+    command: start-dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.6
+    container_name: autosoc-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "127.0.0.1:19092:19092"
+      - "127.0.0.1:9644:9644"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: autosoc-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-06T17-38-46Z
+    container_name: autosoc-minio
+    environment:
+      MINIO_ROOT_USER: ${AUTOSOC_MINIO_ROOT_USER:?Set AUTOSOC_MINIO_ROOT_USER in infrastructure/docker/.env}
+      MINIO_ROOT_PASSWORD: ${AUTOSOC_MINIO_ROOT_PASSWORD:?Set AUTOSOC_MINIO_ROOT_PASSWORD in infrastructure/docker/.env}
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: autosoc-opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ingestion-worker:
+    build:
+      context: ../../
+      dockerfile: workers/ingestion/Dockerfile
+    container_name: autosoc-ingestion
+    restart: unless-stopped
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      MINIO_ENDPOINT: minio:9000
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: ${AUTOSOC_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTOSOC_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AUTOSOC_POSTGRES_DB}
+      POSTGRES_PORT: "5432"
+    volumes:
+      - ../../workers/ingestion/src:/app/workers/ingestion/src
+      - ../../apps/api/src:/app/apps/api/src
+    ports:
+      - "8001:8000"
+      - "5140:5140/udp"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  normalization-worker:
+    build:
+      context: ../../
+      dockerfile: workers/normalization/Dockerfile
+    container_name: autosoc-normalization
+    restart: unless-stopped
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      OPENSEARCH_HOSTS: http://opensearch:9200
+      ENVIRONMENT: development
+    volumes:
+      - ../../packages/event-schemas:/app/packages/event-schemas
+      - ../../workers/normalization/src:/app/workers/normalization/src
+    command:
+      - sh
+      - -c
+      - "pip install -e /app/packages/event-schemas && python -m autosoc_normalization.main"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+
+  detection-worker:
+    build:
+      context: ../../
+      dockerfile: workers/detection/Dockerfile
+    container_name: autosoc-detection
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      REDIS_URL: redis://redis:6379/1
+      DATABASE_URL: postgresql+asyncpg://${AUTOSOC_POSTGRES_USER}:${AUTOSOC_POSTGRES_PASSWORD}@postgres:5432/${AUTOSOC_POSTGRES_DB}
+      RULES_DIR: /app/rules
+    volumes:
+      - ../../workers/detection/src:/app/workers/detection/src
+    command:
+      - sh
+      - -c
+      - "python -m autosoc_detection.main"
+    ports:
+      - "8002:8000"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  correlation-worker:
+    build:
+      context: ../../
+      dockerfile: workers/correlation/Dockerfile
+    container_name: autosoc-correlation
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      REDIS_URL: redis://redis:6379/2
+      DATABASE_URL: postgresql+asyncpg://${AUTOSOC_POSTGRES_USER}:${AUTOSOC_POSTGRES_PASSWORD}@postgres:5432/${AUTOSOC_POSTGRES_DB}
+      CORRELATION_RULES_DIR: /app/rules/correlation
+    ports:
+      - "8003:8000"
+    volumes:
+      - ../../.agents/rules:/app/rules
+      - ../../workers/correlation/src:/app/workers/correlation/src
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  prediction-worker:
+    build:
+      context: ../../
+      dockerfile: workers/prediction/Dockerfile
+    container_name: autosoc-prediction
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      INCIDENTS_TOPIC: security.incidents
+      PREDICTIONS_TOPIC: security.predictions
+      DATABASE_URL: postgresql+asyncpg://${AUTOSOC_POSTGRES_USER}:${AUTOSOC_POSTGRES_PASSWORD}@postgres:5432/${AUTOSOC_POSTGRES_DB}
+      PYTHONPATH: /app/apps/api/src:/app/ml
+    volumes:
+      - ../../models:/app/models
+    command:
+      - python
+      - main.py
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  agent-worker:
+    build:
+      context: ../../
+      dockerfile: workers/agents/Dockerfile
+    container_name: autosoc-agent
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${AUTOSOC_POSTGRES_USER}:${AUTOSOC_POSTGRES_PASSWORD}@postgres:5432/${AUTOSOC_POSTGRES_DB}
+      OPENSEARCH_HOST: opensearch
+      OPENSEARCH_PORT: "9200"
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - ../../workers/agents/src:/app/workers/agents/src
+    command:
+      - sh
+      - -c
+      - "pip install langchain-ollama && python -m autosoc_agents.main"
+    depends_on:
+      opensearch:
+        condition: service_healthy

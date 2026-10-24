@@ -1,0 +1,17 @@
+unsw_nb15:
+  benign: [Normal]
+  attack: [Exploits, Reconnaissance, DoS, Generic, Shellcode, Fuzzers, Worms, Backdoors, Analysis]
+  
+cicids2017:
+  benign: [BENIGN]
+  attack: [PortScan, DDoS, Bot, Infiltration, Web Attack, Bruteforce]
+  
+cic_iot_2023:
+  benign: [BenignTraffic]
+  attack: [DDoS-ICMP_Flood, DDoS-UDP_Flood, DDoS-TCP_Flood, Recon-HostDiscovery, Recon-PortScan]
+
+families:
+  - DoS
+  - Reconnaissance
+  - Botnet
+  - Exploitation

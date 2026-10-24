@@ -1,0 +1,21 @@
+{
+    "dataset_name": "UNSW-NB15",
+    "source_url": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+    "acquisition_timestamp": "2026-08-09T14:02:52.734192",
+    "version": "1.0-quick-profile",
+    "files": [
+        "UNSW_NB15_testing-set.csv"
+    ],
+    "file_sizes": {
+        "UNSW_NB15_testing-set.csv": 114911
+    },
+    "checksums": {
+        "UNSW_NB15_testing-set.csv": "9126ef64f3a656e096a84c91fdff099157fabc5be89d26fd9ba211ecaa43afd7"
+    },
+    "row_counts": {
+        "UNSW_NB15_testing-set.csv": 600
+    },
+    "label_column": "label",
+    "license": "Academic",
+    "acquisition_status": "Success (Quick Profile Subset)"
+}
