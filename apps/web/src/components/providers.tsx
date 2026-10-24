@@ -41,7 +41,12 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SessionProvider>
+    <SessionProvider
+      // Keycloak access tokens are intentionally short-lived. Refresh the
+      // encrypted Auth.js session before client API polling can reuse one.
+      refetchInterval={60}
+      refetchWhenOffline={false}
+    >
       <ExpiredSessionRecovery>
         <QueryClientProvider client={queryClient}>
           {children}
