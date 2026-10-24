@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { useDashboardSummary } from "@/hooks/use-dashboard";
+import { useDashboardSummary, useSeedDashboardTelemetry } from "@/hooks/use-dashboard";
+import { useMe } from "@/hooks/use-me";
 import { DashboardMetrics } from "@/components/dashboard/dashboard-metrics";
 import { EventTimeline } from "@/components/dashboard/event-timeline";
 import { EventCategories } from "@/components/dashboard/event-categories";
@@ -9,7 +10,7 @@ import { EventSources } from "@/components/dashboard/event-sources";
 import { SecuritySummary } from "@/components/dashboard/security-summary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, DatabaseZap, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 
 export default function DashboardPage() {
@@ -21,9 +22,19 @@ export default function DashboardPage() {
     isFetching,
     dataUpdatedAt,
   } = useDashboardSummary();
+  const { data: currentUser } = useMe();
+  const seedTelemetry = useSeedDashboardTelemetry();
 
   const handleRefresh = async () => {
     await refetch();
+  };
+
+  const canSeedDemoTelemetry =
+    process.env.NODE_ENV !== "production" &&
+    (currentUser?.is_superuser || currentUser?.roles.includes("administrator"));
+
+  const handleSeedDemoTelemetry = async () => {
+    await seedTelemetry.mutateAsync();
   };
 
   // 1. Loading State
@@ -113,6 +124,18 @@ export default function DashboardPage() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin text-indigo-400" : ""}`} />
             Refresh
           </Button>
+
+          {canSeedDemoTelemetry && (
+            <Button
+              onClick={handleSeedDemoTelemetry}
+              disabled={seedTelemetry.isPending}
+              variant="outline"
+              className="h-8 border-indigo-900/70 bg-indigo-950/30 hover:bg-indigo-900/40 text-indigo-300 text-xs px-3"
+            >
+              <DatabaseZap className={`h-3.5 w-3.5 mr-1.5 ${seedTelemetry.isPending ? "animate-pulse" : ""}`} />
+              {seedTelemetry.isPending ? "Loading sample data..." : "Load sample data"}
+            </Button>
+          )}
 
 
         </div>

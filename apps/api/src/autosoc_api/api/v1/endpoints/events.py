@@ -44,18 +44,14 @@ async def get_dashboard_summary(
             }
         },
         "aggs": {
-            "categories": {
-                "terms": {"field": "event_category", "size": 10}
-            },
+            "categories": {"terms": {"field": "event_category.keyword", "size": 10}},
             "timeline": {
                 "date_histogram": {
                     "field": "event_time",
                     "fixed_interval": "1h",
                 }
             },
-            "sources": {
-                "terms": {"field": "source_type", "size": 10}
-            },
+            "sources": {"terms": {"field": "source_type.keyword", "size": 10}},
         },
     }
 

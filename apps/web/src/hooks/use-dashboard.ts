@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/api";
 import { useSession } from "next-auth/react";
 
@@ -22,5 +22,23 @@ export function useDashboardSummary() {
       }),
     enabled: status === "authenticated" && !!session?.accessToken,
     refetchInterval: 1000 * 60, // Refetch every minute
+  });
+}
+
+export function useSeedDashboardTelemetry() {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      fetchApi<{ count: number }>("/events/seed", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.accessToken}`,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
+    },
   });
 }
