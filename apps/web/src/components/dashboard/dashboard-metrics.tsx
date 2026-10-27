@@ -14,56 +14,56 @@ export function DashboardMetrics({
   telemetryCategories,
 }: DashboardMetricsProps) {
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-3">
       {/* Total Events */}
-      <Card className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 shadow-sm">
+      <Card className="soc-surface gap-0 border-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-xs font-semibold tracking-wider text-slate-500 dark:text-zinc-400 uppercase">
+          <CardTitle className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Total Events (24h)
           </CardTitle>
-          <Activity className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          <Activity className="h-5 w-5 text-primary" aria-hidden="true" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-100">
+          <div className="text-3xl font-semibold tracking-[-0.04em] text-foreground tabular-nums">
             {totalEvents24h.toLocaleString()}
           </div>
-          <span className="text-xs text-slate-500 dark:text-zinc-500 font-medium mt-1 block">
+          <span className="mt-1 block text-xs font-medium text-muted-foreground">
             Ingested security log entries
           </span>
         </CardContent>
       </Card>
 
       {/* Active Sources */}
-      <Card className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 shadow-sm">
+      <Card className="soc-surface gap-0 border-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-xs font-semibold tracking-wider text-slate-500 dark:text-zinc-400 uppercase">
+          <CardTitle className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Active Data Sources
           </CardTitle>
-          <Server className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <Server className="h-5 w-5 text-emerald-500" aria-hidden="true" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-100">
+          <div className="text-3xl font-semibold tracking-[-0.04em] text-foreground tabular-nums">
             {activeSources}
           </div>
-          <span className="text-xs text-slate-500 dark:text-zinc-500 font-medium mt-1 block">
+          <span className="mt-1 block text-xs font-medium text-muted-foreground">
             Active logs generators reporting in
           </span>
         </CardContent>
       </Card>
 
       {/* Telemetry Categories */}
-      <Card className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-900 shadow-sm">
+      <Card className="soc-surface gap-0 border-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-xs font-semibold tracking-wider text-slate-500 dark:text-zinc-400 uppercase">
+          <CardTitle className="text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Telemetry Categories
           </CardTitle>
-          <Shield className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+          <Shield className="h-5 w-5 text-primary" aria-hidden="true" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-100">
+          <div className="text-3xl font-semibold tracking-[-0.04em] text-foreground tabular-nums">
             {telemetryCategories}
           </div>
-          <span className="text-xs text-slate-500 dark:text-zinc-500 font-medium mt-1 block">
+          <span className="mt-1 block text-xs font-medium text-muted-foreground">
             Different normalized message classes
           </span>
         </CardContent>
@@ -71,4 +71,3 @@ export function DashboardMetrics({
     </div>
   );
 }
-

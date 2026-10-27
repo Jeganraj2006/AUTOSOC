@@ -4,8 +4,96 @@ import { useSession } from "next-auth/react";
 
 export interface LogExplorerParams {
   category?: string;
+  source_id?: string;
+  severity?: string;
   source_ip?: string;
+  destination_ip?: string;
+  file_hash?: string;
+  q?: string;
+  start_time?: string;
+  end_time?: string;
+  sort_field?: "event_time" | "received_at" | "event_category" | "source_id";
+  sort_direction?: "asc" | "desc";
   limit?: number;
+  offset?: number;
+}
+
+export interface EventPage {
+  total: number;
+  events: SecurityEvent[];
+  page: { total: number; limit: number; offset: number };
+}
+
+export interface SecurityEvent {
+  [key: string]: unknown;
+  normalized_event_id: string;
+  event_time?: string;
+  event_category: string;
+  event_type: string;
+  source_ip?: string;
+  destination_ip?: string;
+  event_outcome: string;
+  event_action?: string;
+  source_id?: string;
+  source_type?: string;
+  source_port?: number;
+  destination_port?: number;
+  protocol?: string;
+  direction?: string;
+  bytes_in?: number;
+  bytes_out?: number;
+  packets_in?: number;
+  packets_out?: number;
+  username?: string;
+  user_id?: string;
+  user_domain?: string;
+  privilege_level?: string;
+  hostname?: string;
+  host_id?: string;
+  host_ip?: string;
+  operating_system?: string;
+  process_name?: string;
+  process_id?: number | string;
+  command_line?: string;
+  parent_process_name?: string;
+  parent_process_id?: number | string;
+  file_name?: string;
+  file_path?: string;
+  file_hashes?: Record<string, string>;
+  asset_category?: string;
+  asset_environment?: string;
+  asset_criticality?: string;
+  geo_country?: string;
+  geo_city?: string;
+  ip_reputation_status?: string;
+  candidate_mitre_techniques?: string[];
+  ingestion_id?: string;
+  trace_id?: string;
+  parser_name?: string;
+  parser_version?: string;
+  schema_version?: string;
+  normalization_confidence?: number;
+  normalization_warnings?: string[];
+}
+
+export interface EventUploadResult {
+  total_rows: number;
+  processed: number;
+  failed: number;
+  errors?: string[];
+}
+
+export interface AnomalyPrediction {
+  event_id: string;
+  is_anomaly: boolean;
+  anomaly_score: number;
+  model_score?: number;
+}
+
+export interface AnomalyDetectionResult {
+  total_events: number;
+  anomalies_detected: number;
+  predictions?: AnomalyPrediction[];
 }
 
 export function useEvents(params: LogExplorerParams) {
@@ -15,12 +103,11 @@ export function useEvents(params: LogExplorerParams) {
     queryKey: ["events", params],
     queryFn: () => {
       const searchParams = new URLSearchParams();
-      if (params.category) searchParams.append("category", params.category);
-      if (params.source_ip) searchParams.append("source_ip", params.source_ip);
-      if (params.limit) searchParams.append("limit", params.limit.toString());
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== "") searchParams.append(key, String(value));
+      });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return fetchApi<{ total: number; events: any[] }>(`/events?${searchParams.toString()}`, {
+      return fetchApi<EventPage>(`/events?${searchParams.toString()}`, {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -36,8 +123,7 @@ export function useEvent(eventId: string) {
   return useQuery({
     queryKey: ["events", eventId],
     queryFn: () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fetchApi<any>(`/events/${eventId}`, {
+      fetchApi<SecurityEvent>(`/events/${eventId}`, {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
@@ -69,7 +155,7 @@ export function useUploadEvents() {
         const errorData = await res.json().catch(() => null);
         throw new Error(errorData?.detail || `Upload failed with status ${res.status}`);
       }
-      return res.json();
+      return (await res.json()) as EventUploadResult;
     },
   });
 }
@@ -92,7 +178,7 @@ export function useDetectAnomalies() {
         const errorData = await res.json().catch(() => null);
         throw new Error(errorData?.detail || `Anomaly detection failed with status ${res.status}`);
       }
-      return res.json();
+      return (await res.json()) as AnomalyDetectionResult;
     },
   });
 }

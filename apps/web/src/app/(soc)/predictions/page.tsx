@@ -23,18 +23,19 @@ import {
   ExternalLink,
   Shield,
   Activity,
-  FileText,
   Search,
   Loader2,
-  Calendar,
   Layers,
 } from "lucide-react";
 
 import { getMitreTitle } from "@/lib/mitre-utils";
+import { predictionHasModelMetadata } from "@/lib/intelligence";
+import { canManageTriage } from "@/lib/monitoring";
 import { useIncidents, IncidentResponse } from "@/hooks/use-incidents";
 import { useLatestPrediction, useAllPredictions, useRecomputePrediction } from "@/hooks/use-predictions";
 import { useMe } from "@/hooks/use-me";
 import Link from "next/link";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default function PredictionsPage() {
   const { data: currentUser } = useMe();
@@ -42,14 +43,9 @@ export default function PredictionsPage() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Automatically select the first incident when data loads
-  React.useEffect(() => {
-    if (!selectedIncidentId && incidentsData && incidentsData.length > 0) {
-      setSelectedIncidentId(incidentsData[0].id);
-    }
-  }, [incidentsData, selectedIncidentId]);
+  const activeIncidentId = selectedIncidentId ?? incidentsData?.[0]?.id ?? null;
 
-  const selectedIncident = incidentsData?.find((i: IncidentResponse) => i.id === selectedIncidentId);
+  const selectedIncident = incidentsData?.find((incident: IncidentResponse) => incident.id === activeIncidentId);
 
   // Fetch prediction details and history if selected
   const {
@@ -58,25 +54,22 @@ export default function PredictionsPage() {
     isError: isPredictionError,
     refetch: refetchLatestPrediction,
     isFetching: isPredictionFetching,
-  } = useLatestPrediction(selectedIncidentId || "");
+  } = useLatestPrediction(activeIncidentId || "");
 
   const {
     data: predictionsHistory,
     isLoading: isHistoryLoading,
     isError: isHistoryError,
-  } = useAllPredictions(selectedIncidentId || "");
+  } = useAllPredictions(activeIncidentId || "");
 
   const recomputeMutation = useRecomputePrediction();
 
   // Authorize manual trigger
-  const isAuthorizedToRecompute =
-    !!(currentUser?.is_superuser ||
-    currentUser?.roles?.includes("admin") ||
-    currentUser?.roles?.includes("soc_analyst"));
+  const isAuthorizedToRecompute = canManageTriage(currentUser);
 
   const handleRecompute = () => {
-    if (!selectedIncidentId) return;
-    recomputeMutation.mutate(selectedIncidentId, {
+    if (!activeIncidentId || !isAuthorizedToRecompute) return;
+    recomputeMutation.mutate(activeIncidentId, {
       onSuccess: () => {
         refetchLatestPrediction();
       },
@@ -93,16 +86,8 @@ export default function PredictionsPage() {
   }) || [];
 
   return (
-    <div className="space-y-6 font-mono pb-12">
-      {/* Header Block */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Attack Progression Predictions</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Predicted next-stage attack techniques and threat progression forecasts
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6 pb-12">
+      <PageHeader title="Attack predictions" description="Review persisted Markov-model forecasts alongside observed evidence. Predictions are not confirmed attacker actions." />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left Side: Incident Selector Queue */}
@@ -154,7 +139,7 @@ export default function PredictionsPage() {
                     key={incident.id}
                     onClick={() => setSelectedIncidentId(incident.id)}
                     className={`w-full text-left p-3 transition-colors ${
-                      selectedIncidentId === incident.id
+                      activeIncidentId === incident.id
                         ? "bg-zinc-900/40 border-l-2 border-indigo-500 text-zinc-100"
                         : "hover:bg-zinc-900/10 text-zinc-400 hover:text-zinc-200"
                     }`}
@@ -191,7 +176,7 @@ export default function PredictionsPage() {
 
         {/* Right Side: Prediction Details Workspace */}
         <div className="lg:col-span-3 space-y-6">
-          {!selectedIncidentId ? (
+          {!activeIncidentId ? (
             <Card className="bg-zinc-950 border-zinc-900 shadow-none border-dashed p-16 text-center h-[70vh] flex flex-col items-center justify-center">
               <BrainCircuit className="h-10 w-10 text-zinc-700 mb-3" />
               <p className="text-xs font-semibold text-zinc-400">No Incident Selected</p>
@@ -212,12 +197,12 @@ export default function PredictionsPage() {
                       {selectedIncident?.title || "Incident Prediction Details"}
                     </CardTitle>
                     <div className="text-[9px] text-zinc-600 font-mono mt-0.5">
-                      Incident UUID: {selectedIncidentId}
+                      Incident UUID: {activeIncidentId}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Link href={`/incidents/${selectedIncidentId}`} passHref>
+                    <Link href={`/incidents/${activeIncidentId}`} passHref>
                       <Button
                         variant="outline"
                         className="h-8 border-zinc-900 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 text-xs px-3 font-mono"
@@ -229,7 +214,8 @@ export default function PredictionsPage() {
 
                     <Button
                       onClick={handleRecompute}
-                      disabled={isRecomputing || isPredictionFetching}
+                      disabled={!isAuthorizedToRecompute || isRecomputing || isPredictionFetching}
+                      title={isAuthorizedToRecompute ? undefined : "Your role cannot request prediction recomputation."}
                       className="h-8 bg-indigo-650 hover:bg-indigo-700 disabled:bg-indigo-900 text-zinc-100 text-xs px-3 font-mono"
                     >
                       {isRecomputing ? (
@@ -260,10 +246,11 @@ export default function PredictionsPage() {
                       <div className="mt-4">
                         <Button
                           onClick={handleRecompute}
-                          disabled={isRecomputing}
+                          disabled={!isAuthorizedToRecompute || isRecomputing}
+                          title={isAuthorizedToRecompute ? undefined : "Your role cannot request prediction recomputation."}
                           className="h-7 bg-indigo-650 hover:bg-indigo-700 text-zinc-100 text-xs px-3 font-mono"
                         >
-                          Trigger Initial Forecast
+                          Request prediction recompute
                         </Button>
                       </div>
                     </div>
@@ -301,24 +288,18 @@ export default function PredictionsPage() {
                         </div>
 
                         <div>
-                          <div className="text-[9px] text-zinc-650 uppercase font-semibold">Model Confidence</div>
-                          <span
-                            className={`inline-flex items-center rounded mt-1 px-1.5 py-0.25 text-[9px] font-bold border uppercase ${
-                              latestPrediction.confidence === "high"
-                                ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-400"
-                                : latestPrediction.confidence === "medium"
-                                ? "bg-amber-950/20 border-amber-900/40 text-amber-400"
-                                : "bg-zinc-950 border-zinc-900 text-zinc-400"
-                            }`}
-                          >
-                            {latestPrediction.confidence || "unknown"}
-                          </span>
+                          <div className="text-[9px] text-zinc-650 uppercase font-semibold">Prediction ID</div>
+                          <div className="mt-1 truncate font-mono text-[10px] text-zinc-300" title={latestPrediction.prediction_id}>
+                            {latestPrediction.prediction_id}
+                          </div>
                         </div>
 
                         <div>
                           <div className="text-[9px] text-zinc-650 uppercase font-semibold">Model Identifier</div>
                           <div className="text-[11px] text-zinc-300 mt-1 truncate">
-                            {latestPrediction.model_name || "-"} ({latestPrediction.model_version || "-"})
+                            {predictionHasModelMetadata(latestPrediction.model_name, latestPrediction.model_version)
+                              ? `${latestPrediction.model_name} (${latestPrediction.model_version})`
+                              : "Not supplied"}
                           </div>
                         </div>
 
@@ -413,7 +394,7 @@ export default function PredictionsPage() {
                                     {pred.defensive_recommendation && (
                                       <div className="text-[10px] text-zinc-400 bg-zinc-900/30 p-2 border border-zinc-900 rounded leading-relaxed">
                                         <span className="font-bold text-[9px] uppercase text-zinc-550 block mb-0.5">
-                                          Recommended Containment Action:
+                                          Defensive recommendation:
                                         </span>
                                         {pred.defensive_recommendation}
                                       </div>
@@ -464,7 +445,7 @@ export default function PredictionsPage() {
                         <div className="space-y-3 pt-2">
                           <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider border-b border-zinc-900 pb-1 flex items-center gap-1.5">
                             <Target className="h-3.5 w-3.5" />
-                            Forecasted Containment Target
+                            Predicted target
                           </div>
                           <div className="bg-zinc-950/20 border border-zinc-900 rounded p-3 text-[10.5px] text-zinc-400 flex items-center gap-3">
                             <div className="px-2 py-0.5 bg-red-950/20 border border-red-900/40 rounded text-red-400 font-bold uppercase tracking-wider text-[9px]">
@@ -501,7 +482,7 @@ export default function PredictionsPage() {
                                   <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-44">Run ID</TableHead>
                                   <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-44">Timestamp</TableHead>
                                   <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-24">Risk Score</TableHead>
-                                  <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-24">Confidence</TableHead>
+                                  <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-24">Version</TableHead>
                                   <TableHead className="font-mono text-zinc-500 text-[10px] uppercase h-8 w-40">Model</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -517,11 +498,7 @@ export default function PredictionsPage() {
                                     <TableCell className="font-mono text-zinc-300 text-[11px] py-2 font-bold">
                                       {(hist.escalation_risk_score * 100).toFixed(0)}%
                                     </TableCell>
-                                    <TableCell className="py-2">
-                                      <span className="text-[9px] uppercase font-mono font-bold text-zinc-400 bg-zinc-950 px-1 border border-zinc-900 rounded">
-                                        {hist.confidence}
-                                      </span>
-                                    </TableCell>
+                                    <TableCell className="font-mono text-zinc-400 text-[11px] py-2">{hist.model_version || "—"}</TableCell>
                                     <TableCell className="font-mono text-zinc-500 text-[11px] py-2 truncate max-w-[120px]">
                                       {hist.model_name}
                                     </TableCell>

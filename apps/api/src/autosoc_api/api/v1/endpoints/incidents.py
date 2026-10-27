@@ -45,6 +45,7 @@ async def update_status(
     return await service.update_status(incident_id, status, current_user.subject_id, reason)
 
 from autosoc_api.db.models.alert import Alert
+from autosoc_api.db.models.incident_alert import IncidentAlert
 from autosoc_api.schemas.alert import AlertResponse
 from sqlalchemy import select
 
@@ -54,7 +55,15 @@ async def get_incident_alerts(
     db: AsyncSession = Depends(get_db_session),
     current_user: Principal = Depends(require_permission(Permissions.INCIDENTS_READ)),
 ):
-    stmt = select(Alert).where(Alert.incident_id == incident_id)
+    # Alerts can contribute evidence to more than one correlation.  The
+    # legacy Alert.incident_id field holds only one of those associations, so
+    # use the durable link table rather than silently dropping linked alerts.
+    stmt = (
+        select(Alert)
+        .join(IncidentAlert, IncidentAlert.alert_id == Alert.id)
+        .where(IncidentAlert.incident_id == incident_id)
+        .order_by(IncidentAlert.linked_at.asc(), Alert.id.asc())
+    )
     result = await db.execute(stmt)
     return result.scalars().all()
 

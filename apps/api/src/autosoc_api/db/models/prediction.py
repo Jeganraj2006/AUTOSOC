@@ -1,12 +1,18 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from autosoc_api.db.base import Base
 
 class Prediction(Base):
     __tablename__ = "predictions"
+    __table_args__ = (
+        UniqueConstraint(
+            "incident_id", "model_name", "model_version", "attack_version", "input_fingerprint",
+            name="uq_predictions_logical_input",
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), index=True, nullable=False)
@@ -18,6 +24,7 @@ class Prediction(Base):
     model_name = Column(String(100), nullable=False)
     model_version = Column(String(50), nullable=False)
     attack_version = Column(String(50), nullable=False)
+    input_fingerprint = Column(String(64), nullable=False)
     
     status = Column(String(50), default="completed") # completed, insufficient_evidence, failed
     

@@ -13,10 +13,13 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge, StatusIndicator } from "@/components/ui/soc-indicators";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
-import { AlertCircle, RefreshCw, XCircle, ArrowRight, ShieldAlert } from "lucide-react";
+import { RefreshCw, XCircle, ArrowRight, ShieldAlert } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { incidentHref } from "@/lib/monitoring";
 
 export default function IncidentsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -48,13 +51,11 @@ export default function IncidentsPage() {
   // 1. Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 font-mono">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Incidents</h2>
-            <p className="text-xs text-zinc-500">Autonomous attack progression & incident queues</p>
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="Incident workspace"
+          description="Track the investigation, approval, and resolution lifecycle for correlated security incidents."
+        />
 
         {/* Filters Skeletons */}
         <div className="flex flex-wrap gap-3 items-center">
@@ -64,7 +65,7 @@ export default function IncidentsPage() {
         </div>
 
         {/* Table Skeletons */}
-        <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+        <div className="soc-table-wrap">
           <div className="p-4 border-b border-zinc-900 flex gap-4">
             <Skeleton className="h-4 w-28 bg-zinc-900" />
             <Skeleton className="h-4 w-64 bg-zinc-900" />
@@ -91,49 +92,41 @@ export default function IncidentsPage() {
   // 2. Error State
   if (isError) {
     return (
-      <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-red-900/40 bg-red-950/10 p-6 text-center font-mono">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-500 animate-pulse" />
-        <h3 className="text-lg font-bold text-red-400">Unable to load incidents</h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-2 mb-6">
-          There was an error communicating with the incidents API. Verify server availability and retry.
-        </p>
-        <Button
-          onClick={() => refetch()}
-          className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/30 text-red-400 text-xs px-4"
-        >
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-          Retry Request
-        </Button>
+      <div className="space-y-6">
+        <PageHeader
+          title="Incident workspace"
+          description="Track the investigation, approval, and resolution lifecycle for correlated security incidents."
+        />
+        <OperationalState
+          kind="error"
+          title="Incidents are unavailable"
+          description="The incident service did not return a usable response. Verify the API connection, then retry the request."
+          action={<RetryButton onClick={() => refetch()} disabled={isFetching} />}
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 font-mono">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Incidents</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Autonomous attack progression & incident queues
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+    <div className="space-y-6">
+      <PageHeader
+        title="Incident workspace"
+        description="Track the investigation, approval, and resolution lifecycle for correlated security incidents."
+        actions={
           <Button
             onClick={() => refetch()}
             disabled={isFetching}
             variant="outline"
-            className="h-8 border-zinc-900 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 text-xs px-3"
+            className="h-9"
           >
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin text-indigo-400" : ""}`} />
             Refresh
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Filter Controls Row */}
-      <div className="flex flex-wrap gap-4 items-center bg-zinc-950/40 p-4 border border-zinc-900 rounded-lg">
+      <div className="soc-surface flex flex-wrap items-center gap-4 rounded-xl p-4">
         {/* Status Filter */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-zinc-500 uppercase font-semibold">Status:</span>
@@ -187,7 +180,11 @@ export default function IncidentsPage() {
       </div>
 
       {/* Incidents Table */}
-      <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+      <div className="soc-table-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
+          <span>{filteredIncidents.length} matching incidents</span>
+          <span>Client filters apply to the {incidents?.length ?? 0} records returned by the API.</span>
+        </div>
         <Table>
           <TableHeader className="bg-zinc-950/60 border-b border-zinc-900">
             <TableRow className="hover:bg-transparent border-zinc-900">
@@ -251,7 +248,7 @@ export default function IncidentsPage() {
 
                   <TableCell className="py-3 text-center">
                     <Link
-                      href={`/incidents/${incident.id}`}
+                      href={incidentHref(incident.id)}
                       className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-900 bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-colors"
                     >
                       <ArrowRight className="h-3 w-3" />

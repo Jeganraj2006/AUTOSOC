@@ -8,6 +8,7 @@ from autosoc_detection.engine.core import DetectionEngine
 from autosoc_detection.alerts.publisher import AlertPublisher
 from autosoc_detection.alerts.persistence import AlertPersistence
 from autosoc_detection.consumer import DetectionConsumer
+from autosoc_api.services.worker_reliability import RedisRetryState
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,13 @@ async def main():
     # 3. Setup Persistence & Publisher
     persistence = AlertPersistence(settings.database_url)
     publisher = AlertPublisher(settings.kafka_bootstrap_servers, settings.kafka_alert_topic)
+    retry_state = RedisRetryState(
+        settings.redis_url,
+        "detection",
+        max_attempts=settings.retry_max_attempts,
+        base_delay_seconds=settings.retry_base_delay_seconds,
+        max_delay_seconds=settings.retry_max_delay_seconds,
+    )
     await publisher.start()
     
     # 4. Engine & Consumer
@@ -40,7 +48,8 @@ async def main():
         topic=settings.kafka_source_topic,
         engine=engine,
         publisher=publisher,
-        persistence=persistence
+        persistence=persistence,
+        retry_state=retry_state,
     )
     
     from autosoc_detection.health import start_health_server
@@ -58,6 +67,7 @@ async def main():
         await publisher.stop()
         await state_manager.close()
         await persistence.close()
+        await retry_state.close()
         logger.info("Worker shut down cleanly.")
 
 if __name__ == "__main__":

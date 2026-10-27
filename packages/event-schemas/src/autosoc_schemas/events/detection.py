@@ -14,6 +14,10 @@ class DetectionResult(BaseModel):
     Represents the output of the rule engine before persistence or aggregation.
     """
     detection_id: UUID = Field(description="Unique identifier for this specific detection match")
+    alert_id: Optional[UUID] = Field(
+        default=None,
+        description="Database alert identifier assigned after durable persistence.",
+    )
     rule_id: str = Field(description="Identifier of the rule that triggered")
     rule_version: str = Field(description="Version of the rule that matched")
     rule_name: str = Field(description="Human-readable rule name")

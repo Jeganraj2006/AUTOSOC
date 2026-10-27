@@ -61,8 +61,19 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
     ],
     "auditor": [
         Permissions.AUDIT_READ, Permissions.INCIDENTS_READ, Permissions.EVENTS_READ,
-        Permissions.REPORTS_READ, Permissions.ALERTS_READ
-    ]
+        Permissions.REPORTS_READ, Permissions.ALERTS_READ, Permissions.PREDICTIONS_READ,
+        Permissions.AGENTS_READ, Permissions.RESPONSES_READ, Permissions.DATASOURCES_READ,
+        Permissions.RULES_READ, Permissions.SETTINGS_READ,
+    ],
+    # Keycloak provisions the development read-only account with ``viewer``.
+    # Keep it explicitly read-only while allowing it to inspect the SOC data
+    # and response history needed to understand an incident.
+    "viewer": [
+        Permissions.ALERTS_READ, Permissions.INCIDENTS_READ, Permissions.EVENTS_READ,
+        Permissions.PREDICTIONS_READ, Permissions.AGENTS_READ, Permissions.RESPONSES_READ,
+        Permissions.REPORTS_READ, Permissions.AUDIT_READ, Permissions.DATASOURCES_READ,
+        Permissions.RULES_READ, Permissions.SETTINGS_READ,
+    ],
 }
 
 def get_permissions_for_roles(roles: List[str]) -> List[str]:

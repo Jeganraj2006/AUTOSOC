@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     
     # Redis for state management
     redis_url: str = "redis://redis:6379/1"
+    retry_max_attempts: int = 5
+    retry_base_delay_seconds: float = 1.0
+    retry_max_delay_seconds: float = 30.0
     
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/autosoc"

@@ -1,318 +1,316 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMe } from "@/hooks/use-me";
-import { useSystemHealth } from "@/hooks/use-system-health";
 import { signOut } from "next-auth/react";
 import {
+  Activity,
+  Bell,
+  BrainCircuit,
+  Braces,
+  CircleDot,
+  Cpu,
+  Database,
   LayoutDashboard,
   ListOrdered,
-  Bell,
-  ShieldAlert,
-  BrainCircuit,
-  Shield,
-  Database,
-  Cpu,
-  Braces,
-  Activity,
-  ShieldCheck,
-  User,
   LogOut,
   Menu,
-  X,
-  Settings,
-  Sun,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Sun,
+  User,
+  X,
 } from "lucide-react";
+import { useMe } from "@/hooks/use-me";
+import { useSystemHealth } from "@/hooks/use-system-health";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const routes = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/events", label: "Log Explorer", icon: ListOrdered },
-  { href: "/alerts", label: "Alerts", icon: Bell },
-  { href: "/incidents", label: "Incidents", icon: ShieldAlert },
-  { href: "/predictions", label: "Predictions", icon: BrainCircuit },
-  { href: "/detection", label: "Detection", icon: Shield },
-  { href: "/data-sources", label: "Data Sources", icon: Database },
-  { href: "/agents", label: "Agents", icon: Cpu },
-  { href: "/rules", label: "Rules", icon: Braces },
-  { href: "/system-health", label: "System Health", icon: Activity },
+type RouteItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+};
+
+const navigationGroups: Array<{ label: string; routes: RouteItem[] }> = [
+  {
+    label: "Monitoring",
+    routes: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/events", label: "Log Explorer", icon: ListOrdered },
+      { href: "/alerts", label: "Alerts", icon: Bell },
+      { href: "/incidents", label: "Incidents", icon: ShieldAlert },
+    ],
+  },
+  {
+    label: "Intelligence",
+    routes: [
+      { href: "/detection", label: "Detection", icon: Shield },
+      { href: "/predictions", label: "Predictions", icon: BrainCircuit },
+      { href: "/agents", label: "AI Investigations", icon: Cpu },
+      { href: "/responses", label: "Responses", icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "Administration",
+    routes: [
+      { href: "/data-sources", label: "Data Sources", icon: Database },
+      { href: "/rules", label: "Detection Rules", icon: Braces },
+      { href: "/system-health", label: "System Health", icon: Activity },
+      { href: "/audit", label: "Audit Activity", icon: ShieldCheck, adminOnly: true },
+    ],
+  },
 ];
 
-const adminRoutes = [
-  { href: "/audit", label: "Audit Activity", icon: ShieldCheck },
-];
+function isActiveRoute(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link href="/dashboard" className="flex items-center gap-3 rounded-lg focus-visible:outline-none">
+      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+        <Shield className="size-5" aria-hidden="true" />
+      </span>
+      {!compact ? (
+        <span className="min-w-0">
+          <span className="block text-base font-semibold tracking-[-0.03em] text-[var(--sidebar-foreground)]">AutoSOC</span>
+          <span className="block truncate text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--sidebar-muted)]">Security operations</span>
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function Navigation({
+  collapsed,
+  pathname,
+  isAdmin,
+  onNavigate,
+}: {
+  collapsed?: boolean;
+  pathname: string;
+  isAdmin: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav className="space-y-5" aria-label="Primary navigation">
+      {navigationGroups.map((group) => {
+        const routes = group.routes.filter((route) => !route.adminOnly || isAdmin);
+        if (routes.length === 0) return null;
+        return (
+          <section key={group.label} aria-label={group.label} className="space-y-1.5">
+            <h2 className={collapsed ? "sr-only" : "px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sidebar-muted)]"}>
+              {group.label}
+            </h2>
+            {routes.map((route) => {
+              const active = isActiveRoute(pathname, route.href);
+              const Icon = route.icon;
+              return (
+                <Link
+                  key={route.href}
+                  href={route.href}
+                  onClick={onNavigate}
+                  aria-current={active ? "page" : undefined}
+                  title={collapsed ? route.label : undefined}
+                  className={`group flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none ${
+                    active
+                      ? "bg-[var(--sidebar-active)] text-white"
+                      : "text-[var(--sidebar-foreground)] hover:bg-white/7 hover:text-white"
+                  } ${collapsed ? "justify-center px-2" : ""}`}
+                >
+                  <Icon className="size-4 shrink-0 text-primary group-hover:text-primary" aria-hidden="true" />
+                  {!collapsed ? <span>{route.label}</span> : <span className="sr-only">{route.label}</span>}
+                </Link>
+              );
+            })}
+          </section>
+        );
+      })}
+    </nav>
+  );
+}
+
+function UserMenu({ username, email }: { username?: string; email?: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Open account menu"
+        className="grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
+      >
+        <User className="size-4" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56 border-border bg-popover text-popover-foreground shadow-xl">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="px-3 py-2.5 font-normal">
+            <p className="truncate text-sm font-semibold text-foreground">{username ?? "Authenticated user"}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{email ?? "Session loading"}</p>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="bg-border" />
+          <Link href="/profile">
+            <DropdownMenuItem className="cursor-pointer gap-2 text-foreground focus:bg-muted">
+              <User className="size-4" aria-hidden="true" />
+              Profile
+            </DropdownMenuItem>
+          </Link>
+          <DropdownMenuItem
+            onClick={() => void signOut({ callbackUrl: "/login" })}
+            className="cursor-pointer gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+          >
+            <LogOut className="size-4" aria-hidden="true" />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { data: user, isLoading: isUserLoading } = useMe();
   const { isSuccess: isHealthSuccess, isError: isHealthError } = useSystemHealth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "dark";
+    return window.localStorage.getItem("autosoc_theme") === "light" ? "light" : "dark";
+  });
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("autosoc_theme") as "light" | "dark" | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-      if (savedTheme === "dark") {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
-    } else {
-      document.documentElement.classList.add("dark");
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("autosoc_theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMobileMenuOpen]);
+
+  const isAdmin = Boolean(user?.is_superuser || user?.roles.includes("administrator"));
+  const pageTitle = useMemo(() => {
+    for (const group of navigationGroups) {
+      const matched = group.routes.find((route) => isActiveRoute(pathname, route.href));
+      if (matched) return matched.label;
     }
-  }, []);
-
-  const toggleTheme = () => {
-    const nextTheme = theme === "light" ? "dark" : "light";
-    setTheme(nextTheme);
-    localStorage.setItem("autosoc_theme", nextTheme);
-    if (nextTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  };
-
-  const isSuperuser = user?.is_superuser || false;
-  const navRoutes = isSuperuser ? [...routes, ...adminRoutes] : routes;
-
-  // Determine current page title
-  const currentRoute = navRoutes.find((r) => pathname.startsWith(r.href));
-  const pageTitle = currentRoute ? currentRoute.label : "AutoSOC Page";
+    return "AutoSOC";
+  }, [pathname]);
+  const healthLabel = isHealthSuccess ? "Connected" : isHealthError ? "Unavailable" : "Checking";
 
   return (
-    <div className="flex min-h-screen bg-slate-100 dark:bg-zinc-950 font-sans text-slate-900 dark:text-zinc-100 transition-colors duration-200">
-      {/* Desktop Sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 md:flex shadow-sm">
-        {/* Title logo block */}
-        <div className="flex flex-col justify-center h-20 border-b border-slate-200 dark:border-zinc-900 px-6 bg-slate-50/50 dark:bg-zinc-950">
-          <div className="flex items-center gap-2.5">
-            <Shield className="h-6 w-6 text-indigo-600 dark:text-indigo-500" />
-            <span className="font-sans text-xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-100">
-              AutoSOC
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium tracking-tight mt-0.5">
-            Autonomous Security Operations Center
-          </span>
+    <div className="soc-canvas min-h-screen text-foreground">
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/8 bg-[var(--sidebar)] transition-[width] duration-200 md:flex md:flex-col ${
+          isCollapsed ? "w-20" : "w-72"
+        }`}
+      >
+        <div className="flex h-20 items-center justify-between border-b border-white/8 px-4">
+          <Brand compact={isCollapsed} />
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="grid size-8 place-items-center rounded-md text-[var(--sidebar-muted)] transition-colors hover:bg-white/7 hover:text-white focus-visible:outline-none"
+          >
+            {isCollapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
+          </button>
         </div>
-
-        {/* Sidebar Nav */}
-        <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-          {navRoutes.map((route, index) => {
-            const isActive = pathname.startsWith(route.href);
-            return (
-              <React.Fragment key={route.href}>
-              {(index === 0 || index === 4 || index === 8 || index === 10) && (
-                <div className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-zinc-500">
-                  {index === 0 ? "Monitoring" : index === 4 ? "Threat Intelligence" : index === 8 ? "Platform" : "Administration"}
-                </div>
-              )}
-              <Link
-                key={route.href}
-                href={route.href}
-                className={`flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-semibold transition-all ${
-                  isActive
-                    ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border-l-4 border-indigo-600 dark:border-indigo-500 pl-3 shadow-xs"
-                    : "text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-zinc-200"
-                }`}
-              >
-                <route.icon className="h-5 w-5 shrink-0" />
-                {route.label}
-              </Link>
-              </React.Fragment>
-            );
-          })}
-        </nav>
-
-        {/* Sidebar User Profile Section */}
-        <div className="border-t border-slate-200 dark:border-zinc-900 p-4 bg-slate-50 dark:bg-zinc-950/60">
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          <Navigation collapsed={isCollapsed} pathname={pathname} isAdmin={isAdmin} />
+        </div>
+        <div className="border-t border-white/8 p-3">
           {isUserLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-24 bg-slate-200 dark:bg-zinc-900" />
-              <Skeleton className="h-3 w-32 bg-slate-200 dark:bg-zinc-900" />
+            <div className="space-y-2 px-2">
+              <Skeleton className="h-3 w-20 bg-white/10" />
+              <Skeleton className="h-3 w-28 bg-white/10" />
             </div>
+          ) : isCollapsed ? (
+            <div className="flex justify-center"><UserMenu username={user?.username} email={user?.email} /></div>
           ) : (
-            <div className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-primary"><User className="size-4" aria-hidden="true" /></span>
               <div className="min-w-0 flex-1">
-                <p className="font-semibold truncate text-slate-900 dark:text-zinc-200">{user?.username}</p>
-                <p className="text-[11px] truncate text-slate-500 dark:text-zinc-400">{user?.email}</p>
+                <p className="truncate text-xs font-semibold text-[var(--sidebar-foreground)]">{user?.username}</p>
+                <p className="truncate text-[11px] text-[var(--sidebar-muted)]">{user?.roles.join(", ") || "Authenticated"}</p>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger className="rounded-md p-1.5 hover:bg-slate-200 dark:hover:bg-zinc-900 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer outline-hidden">
-                  <Settings className="h-4 w-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 text-xs shadow-lg">
-                  <Link href="/profile">
-                    <DropdownMenuItem className="cursor-pointer focus:bg-slate-100 dark:focus:bg-zinc-900 text-slate-700 dark:text-zinc-200">
-                      <User className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
-                    </DropdownMenuItem>
-                  </Link>
-                  <DropdownMenuSeparator className="bg-slate-200 dark:bg-zinc-900" />
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      await signOut({ callbackUrl: "/login" });
-                    }}
-                    className="text-red-600 dark:text-red-400 cursor-pointer focus:bg-red-50 dark:focus:bg-red-950/30"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <UserMenu username={user?.username} email={user?.email} />
             </div>
           )}
         </div>
       </aside>
 
-      {/* Main Container */}
-      <div className="flex flex-1 flex-col min-w-0">
-        {/* Header */}
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 dark:border-zinc-900 bg-white/90 dark:bg-zinc-950/60 px-6 backdrop-blur-md sticky top-0 z-30 shadow-xs">
-          <div className="flex items-center gap-4">
-            {/* Mobile Menu Trigger */}
+      <div className={`min-h-screen transition-[padding] duration-200 ${isCollapsed ? "md:pl-20" : "md:pl-72"}`}>
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-background/94 px-4 backdrop-blur-sm sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="rounded p-1.5 text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900 md:hidden"
+              type="button"
+              onClick={() => setIsMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+              className="grid size-9 place-items-center rounded-lg border border-border bg-card text-foreground md:hidden"
             >
-              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              <Menu className="size-4" aria-hidden="true" />
             </button>
-
-            {/* Current Section Title */}
-            <h1 className="hidden md:block text-base font-bold tracking-tight text-slate-800 dark:text-zinc-200 uppercase">
-              {pageTitle}
-            </h1>
-
-            <div className="flex items-center md:hidden">
-              <Shield className="h-6 w-6 text-indigo-600 dark:text-indigo-500 mr-2" />
-              <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-zinc-100">AutoSOC</span>
+            <div className="min-w-0">
+              <p className="hidden text-xs font-medium text-muted-foreground sm:block">Security operations</p>
+              <p className="truncate text-sm font-semibold tracking-[-0.015em] text-foreground sm:text-base">{pageTitle}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Theme Toggle Button */}
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs sm:flex" aria-live="polite">
+              <CircleDot className={`size-3 ${isHealthSuccess ? "text-emerald-500" : isHealthError ? "text-destructive" : "text-amber-500"}`} aria-hidden="true" />
+              <span className="text-muted-foreground">API</span>
+              <span className="font-semibold text-foreground">{healthLabel}</span>
+            </div>
             <button
-              onClick={toggleTheme}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-              title="Switch between Light and Dark themes"
+              type="button"
+              onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              className="grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
             >
-              {theme === "light" ? (
-                <>
-                  <Sun className="h-4 w-4 text-amber-500 shrink-0" />
-                  <span>Light Theme</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="h-4 w-4 text-indigo-400 shrink-0" />
-                  <span>Dark Theme</span>
-                </>
-              )}
+              {theme === "dark" ? <Sun className="size-4" aria-hidden="true" /> : <Moon className="size-4" aria-hidden="true" />}
             </button>
-
-            {/* Real System Connection Status Indicator */}
-            <div className="flex items-center gap-1.5 border border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950 px-2.5 py-1 rounded-md text-xs font-medium">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  isHealthSuccess
-                    ? "bg-emerald-500"
-                    : isHealthError
-                    ? "bg-red-500"
-                    : "bg-slate-400 animate-pulse"
-                }`}
-              />
-              <span className="text-slate-500 dark:text-zinc-500">API Status:</span>
-              <span
-                className={`font-semibold ${
-                  isHealthSuccess
-                    ? "text-emerald-600 dark:text-emerald-500"
-                    : isHealthError
-                    ? "text-red-600 dark:text-red-500"
-                    : "text-slate-500"
-                }`}
-              >
-                {isHealthSuccess ? "ONLINE" : isHealthError ? "OFFLINE" : "CHECKING"}
-              </span>
-            </div>
-
-            {/* Environment Indicator */}
-            <div className="hidden sm:inline-flex items-center border border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950 px-2.5 py-1 rounded-md text-xs font-bold text-slate-600 dark:text-zinc-400 uppercase tracking-wider">
-              {process.env.NODE_ENV === "production" ? "PRODUCTION" : "DEVELOPMENT"}
-            </div>
-
-            {/* User Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer outline-hidden shadow-2xs">
-                <User className="h-4 w-4 text-slate-600 dark:text-zinc-400" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 bg-white dark:bg-zinc-950 border-slate-200 dark:border-zinc-900 text-xs shadow-lg">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="font-normal px-3 py-2">
-                    <p className="truncate font-bold text-slate-800 dark:text-zinc-200">{user?.username}</p>
-                    <p className="truncate text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{user?.email}</p>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-slate-200 dark:bg-zinc-900" />
-                  <Link href="/profile">
-                    <DropdownMenuItem className="cursor-pointer focus:bg-slate-100 dark:focus:bg-zinc-900 text-slate-700 dark:text-zinc-200">
-                      <User className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
-                    </DropdownMenuItem>
-                  </Link>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      await signOut({ callbackUrl: "/login" });
-                    }}
-                    className="text-red-600 dark:text-red-400 cursor-pointer focus:bg-red-50 dark:focus:bg-red-950/30"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <UserMenu username={user?.username} email={user?.email} />
           </div>
         </header>
 
-        {/* Mobile Navigation Drawer */}
-        {isMobileMenuOpen && (
-          <div className="md:hidden border-b border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 px-4 py-3 space-y-1">
-            {navRoutes.map((route) => {
-              const isActive = pathname.startsWith(route.href);
-              return (
-                <Link
-                  key={route.href}
-                  href={route.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={`flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-semibold transition-colors ${
-                    isActive
-                      ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border-l-4 border-indigo-600 dark:border-indigo-500 pl-3"
-                      : "text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-zinc-200"
-                  }`}
-                >
-                  <route.icon className="h-5 w-5 shrink-0" />
-                  {route.label}
-                </Link>
-              );
-            })}
+        {isMobileMenuOpen ? (
+          <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
+            <button type="button" aria-label="Close navigation menu" className="absolute inset-0 bg-slate-950/55" onClick={() => setIsMobileMenuOpen(false)} />
+            <div className="relative flex h-full w-[min(20rem,calc(100%-2rem))] flex-col bg-[var(--sidebar)] shadow-2xl">
+              <div className="flex h-20 items-center justify-between border-b border-white/8 px-4">
+                <Brand />
+                <button type="button" aria-label="Close navigation menu" onClick={() => setIsMobileMenuOpen(false)} className="grid size-9 place-items-center rounded-lg text-[var(--sidebar-muted)] hover:bg-white/7 hover:text-white">
+                  <X className="size-5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 py-5">
+                <Navigation pathname={pathname} isAdmin={isAdmin} onNavigate={() => setIsMobileMenuOpen(false)} />
+              </div>
+            </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Page Content Container */}
-        <main className="flex-1 p-6 overflow-y-auto">
-          <div className="mx-auto max-w-7xl animate-fade-in">{children}</div>
+        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </main>
       </div>
     </div>

@@ -13,12 +13,16 @@ AutoSOC ingests security events, normalizes them, and correlates them into actio
 - **Human-in-the-Loop Response**: Enforces strict RBAC and human approval before executing containment playbooks.
 
 ## Getting Started
-Please see the `docs/` folder for comprehensive documentation, including the Developer Guide, Deployment Guide, and Demo Scenarios.
+This is a **local-development and academic demonstration release**, not a production-ready security product. See [the deployment guide](docs/DEPLOYMENT_GUIDE.md), [architecture](docs/SYSTEM_ARCHITECTURE.md), [security architecture](docs/SECURITY_ARCHITECTURE.md), [known limitations](docs/KNOWN_LIMITATIONS.md), and [final demo guide](docs/FINAL_DEMO_GUIDE.md).
 
-Run the local setup script to initialize the infrastructure:
+First generate local-only configuration (it creates only placeholder values and never prints secrets), then initialize infrastructure:
 ```bash
+pwsh scripts/initialize-local-env.ps1
 pwsh scripts/setup-dev.ps1
+pwsh scripts/start-local.ps1
 ```
+
+The setup is repeatable: it preserves initialized volumes and existing Keycloak passwords. Explicit credential rotation is opt-in through `AUTOSOC_ROTATE_DEV_PASSWORDS=true`; credentials remain outside this repository.
 
 ## Academic Constraints
 This project adheres to strict academic constraints. It does not fabricate enterprise SLAs, keeps all agent execution read-only without human approval, and clearly distinguishes between anomalous behaviors and confirmed vulnerabilities.

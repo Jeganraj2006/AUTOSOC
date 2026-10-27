@@ -42,6 +42,17 @@ class SyntheticParser(BaseParser):
         if "file" in payload:
             event.file_name = payload["file"].get("name")
             event.file_path = payload["file"].get("path")
+            hashes = payload["file"].get("hashes")
+            if isinstance(hashes, dict):
+                # The canonical schema is Dict[str, str]. Reject nested/untyped
+                # payload fragments rather than allowing telemetry to alter mapping.
+                event.file_hashes = {
+                    str(algorithm).upper(): value
+                    for algorithm, value in hashes.items()
+                    if isinstance(value, str)
+                }
+            elif hashes is not None:
+                event.normalization_warnings.append("file.hashes was not an object")
             
         # Timestamp
         raw_ts = payload.get("timestamp")

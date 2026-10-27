@@ -2,6 +2,7 @@ import logging
 import json
 import uuid
 import hashlib
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
@@ -20,12 +21,40 @@ class IngestionPipeline:
                  archive: MinioArchiveService, 
                  dedup: DeduplicationService,
                  health_tracker: HealthTrackerService,
-                 collector_version: str = "0.1.0"):
+                 collector_version: str = "0.1.0",
+                 retry_max_attempts: int = 5,
+                 retry_base_delay_seconds: float = 1.0,
+                 retry_max_delay_seconds: float = 30.0):
         self.publisher = publisher
         self.archive = archive
         self.dedup = dedup
         self.health_tracker = health_tracker
         self.collector_version = collector_version
+        self.retry_max_attempts = retry_max_attempts
+        self.retry_base_delay_seconds = retry_base_delay_seconds
+        self.retry_max_delay_seconds = retry_max_delay_seconds
+
+    async def _retry(self, stage: str, operation):
+        """Run a transient I/O operation with bounded exponential backoff."""
+        last_error = None
+        for attempt in range(1, self.retry_max_attempts + 1):
+            try:
+                await operation()
+                return True, None, attempt
+            except Exception as exc:
+                last_error = exc
+                if attempt == self.retry_max_attempts:
+                    break
+                delay = min(
+                    self.retry_max_delay_seconds,
+                    self.retry_base_delay_seconds * (2 ** (attempt - 1)),
+                )
+                logger.warning(
+                    "ingestion_retry_scheduled stage=%s attempt=%s max_attempts=%s delay_seconds=%s error=%s",
+                    stage, attempt, self.retry_max_attempts, delay, f"{type(exc).__name__}: {exc}"[:500],
+                )
+                await asyncio.sleep(delay)
+        return False, last_error, self.retry_max_attempts
 
     async def _handle_failure(self, 
                               failure_stage: str, 
@@ -36,7 +65,8 @@ class IngestionPipeline:
                               payload_hash: Optional[str] = None,
                               retryable: bool = False,
                               trace_id: Optional[str] = None,
-                              ingestion_id: Optional[uuid.UUID] = None):
+                              ingestion_id: Optional[uuid.UUID] = None,
+                              retry_count: int = 0):
         failed_event = FailedSecurityEvent(
             failure_id=uuid.uuid4(),
             ingestion_id=ingestion_id,
@@ -48,7 +78,8 @@ class IngestionPipeline:
             failure_description=description,
             payload_hash=payload_hash,
             trace_id=trace_id,
-            retryable=retryable
+            retryable=retryable,
+            retry_count=retry_count,
         )
         try:
             await self.publisher.publish_failed_event(failed_event)
@@ -122,41 +153,47 @@ class IngestionPipeline:
         )
 
         # 4. Archival
-        try:
-            await self.archive.archive_event(raw_event)
-        except Exception as e:
+        archived, archive_error, archive_attempts = await self._retry(
+            "archive", lambda: self.archive.archive_event(raw_event)
+        )
+        if not archived:
             # MinIO failure is transient.
             await self._handle_failure(
                 failure_stage="archive",
                 reason_code="ARCHIVE_FAILED",
-                description=str(e),
+                description=str(archive_error),
                 source_id=source_id,
                 source_type=source_type,
                 payload_hash=payload_hash,
                 retryable=True,
                 trace_id=trace_id,
-                ingestion_id=ingestion_id
+                ingestion_id=ingestion_id,
+                retry_count=archive_attempts,
             )
+            await self.dedup.release(source_id, payload_hash)
             # Fail the request so the source retries
             await self.health_tracker.update_source_health(source_id, "failed")
             INGESTION_EVENTS_TOTAL.labels(source_type=source_type, status="failed").inc()
             return IngestionStatus(event_id=event_id, status="failed", error="Archive timeout/failure")
 
         # 5. Publish to Redpanda
-        try:
-            await self.publisher.publish_raw_event(raw_event)
-        except Exception as e:
+        published, publish_error, publish_attempts = await self._retry(
+            "publish", lambda: self.publisher.publish_raw_event(raw_event)
+        )
+        if not published:
             await self._handle_failure(
                 failure_stage="publish",
                 reason_code="PUBLISH_FAILED",
-                description=str(e),
+                description=str(publish_error),
                 source_id=source_id,
                 source_type=source_type,
                 payload_hash=payload_hash,
                 retryable=True,
                 trace_id=trace_id,
-                ingestion_id=ingestion_id
+                ingestion_id=ingestion_id,
+                retry_count=publish_attempts,
             )
+            await self.dedup.release(source_id, payload_hash)
             await self.health_tracker.update_source_health(source_id, "failed")
             INGESTION_EVENTS_TOTAL.labels(source_type=source_type, status="failed").inc()
             return IngestionStatus(event_id=event_id, status="failed", error="Broker timeout/failure")

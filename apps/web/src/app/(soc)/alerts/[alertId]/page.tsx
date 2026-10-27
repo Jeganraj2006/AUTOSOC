@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAlert, useUpdateAlertStatus } from "@/hooks/use-alerts";
 import { useMe } from "@/hooks/use-me";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,8 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge, StatusIndicator } from "@/components/ui/soc-indicators";
-import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { canManageTriage, incidentHref } from "@/lib/monitoring";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default function AlertDetailPage() {
   const { alertId } = useParams() as { alertId: string };
@@ -21,10 +25,7 @@ export default function AlertDetailPage() {
   const updateStatusMutation = useUpdateAlertStatus();
 
   // Role authorization checks
-  const isAuthorizedToEdit =
-    currentUser?.is_superuser ||
-    currentUser?.roles.includes("admin") ||
-    currentUser?.roles.includes("soc_analyst");
+  const isAuthorizedToEdit = canManageTriage(currentUser);
 
   const handleStatusChange = (newStatus: string) => {
     updateStatusMutation.mutate({ alertId, status: newStatus });
@@ -33,14 +34,8 @@ export default function AlertDetailPage() {
   // 1. Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 font-mono">
-        <div className="flex items-center gap-3 border-b border-zinc-900 pb-4">
-          <Skeleton className="h-8 w-8 bg-zinc-900" />
-          <div className="space-y-2 flex-1">
-            <Skeleton className="h-7 w-96 bg-zinc-900" />
-            <Skeleton className="h-3 w-48 bg-zinc-900" />
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader title="Alert detail" description="Loading the persisted detection record and its available investigation context." breadcrumb="Alerts / Detail" />
 
         <div className="grid gap-6 md:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
@@ -59,50 +54,25 @@ export default function AlertDetailPage() {
   // 2. Error State
   if (isError || !alert) {
     return (
-      <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-red-900/40 bg-red-950/10 p-6 text-center font-mono">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-500" />
-        <h3 className="text-lg font-bold text-red-400">Alert not found</h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-2 mb-6">
-          The requested alert details could not be retrieved from the backend API.
-        </p>
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => router.push("/alerts")}
-            variant="outline"
-            className="border-zinc-900 bg-zinc-950 hover:bg-zinc-900 text-xs"
-          >
-            Back to Alerts
-          </Button>
-          <Button
-            onClick={() => refetch()}
-            className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/30 text-red-400 text-xs"
-          >
-            <RefreshCw className="h-3.5 w-3.5 mr-2" />
-            Retry
-          </Button>
-        </div>
+      <div className="space-y-6">
+        <PageHeader title="Alert detail" description="Review a persisted detection record and its available investigation context." breadcrumb="Alerts / Detail" />
+        <OperationalState
+          kind="error"
+          title="Alert detail is unavailable"
+          description="The requested alert could not be retrieved from the backend API."
+          action={<div className="flex justify-center gap-2"><Button variant="outline" onClick={() => router.push("/alerts")}>Back to alerts</Button><RetryButton onClick={() => refetch()} /></div>}
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 font-mono">
-      {/* Header / Actions Block */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between border-b border-zinc-900 pb-4">
-        <div className="space-y-2">
-          <button
-            onClick={() => router.push("/alerts")}
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Alerts
-          </button>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">{alert.title}</h2>
-          <p className="text-xs text-zinc-500">ID: {alert.id}</p>
-        </div>
-
-        {/* Status Update Control Section */}
-        <div className="flex flex-col items-end gap-1.5">
+    <div className="space-y-6">
+      <PageHeader
+        title={alert.title}
+        description={`Alert ID: ${alert.id}`}
+        breadcrumb="Alerts / Detail"
+        actions={<div className="flex flex-col items-end gap-1.5">
           <span className="text-[10px] text-zinc-500 uppercase font-semibold">Workflow Status</span>
           {isAuthorizedToEdit ? (
             <div className="flex items-center gap-2">
@@ -136,12 +106,15 @@ export default function AlertDetailPage() {
               <StatusIndicator status={alert.status} />
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      />
+      <Button variant="ghost" className="-mt-4 w-fit" onClick={() => router.push("/alerts")}>
+        <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to alerts
+      </Button>
 
       {/* Metadata Cards Grid */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-zinc-950 border-zinc-900 shadow-none">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card className="soc-surface gap-0 border-0 py-0">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Severity</CardTitle>
           </CardHeader>
@@ -150,7 +123,22 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-zinc-950 border-zinc-900 shadow-none">
+        <Card className="soc-surface gap-0 border-0 py-0">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Correlated incident</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            {alert.incident_id ? (
+              <Link className="text-xs font-medium text-primary underline-offset-4 hover:underline" href={incidentHref(alert.incident_id)}>
+                Open incident
+              </Link>
+            ) : (
+              <span className="text-xs text-muted-foreground">No linked incident</span>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="soc-surface gap-0 border-0 py-0">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Current Status</CardTitle>
           </CardHeader>
@@ -159,7 +147,7 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-zinc-950 border-zinc-900 shadow-none">
+        <Card className="soc-surface gap-0 border-0 py-0">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Rule Association</CardTitle>
           </CardHeader>
@@ -168,7 +156,7 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-zinc-950 border-zinc-900 shadow-none">
+        <Card className="soc-surface gap-0 border-0 py-0">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Detection Time</CardTitle>
           </CardHeader>
@@ -182,7 +170,7 @@ export default function AlertDetailPage() {
 
       {/* Detail Analysis & MITRE Context */}
       <div className="grid gap-6 lg:grid-cols-7">
-        <Card className="lg:col-span-4 bg-zinc-950 border-zinc-900 shadow-none">
+        <Card className="soc-surface lg:col-span-4 gap-0 border-0 py-0">
           <CardHeader>
             <CardTitle className="text-sm font-semibold text-zinc-300 uppercase tracking-wider font-mono">
               Why This Triggered
@@ -220,7 +208,7 @@ export default function AlertDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3 bg-zinc-950 border-zinc-900 shadow-none">
+        <Card className="soc-surface lg:col-span-3 gap-0 border-0 py-0">
           <CardHeader>
             <CardTitle className="text-sm font-semibold text-zinc-300 uppercase tracking-wider font-mono">
               ATT&CK Context
@@ -232,13 +220,8 @@ export default function AlertDetailPage() {
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <p className="text-xs text-zinc-400 leading-relaxed font-mono">
-                The evaluation signature tags suggest association with the following threat technique:
+                This alert payload does not contain a rule-derived ATT&amp;CK mapping. No technique is inferred by the interface.
               </p>
-              <div className="flex flex-wrap gap-2">
-                <Badge className="bg-indigo-950/40 border border-indigo-900/60 text-indigo-400 font-mono text-xs">
-                  T1110 (Credential Access)
-                </Badge>
-              </div>
             </div>
 
             <div className="space-y-2 border-t border-zinc-900 pt-4">
@@ -246,7 +229,7 @@ export default function AlertDetailPage() {
                 Investigation Guidance
               </h4>
               <p className="text-xs text-zinc-500 leading-relaxed font-mono border-l-2 border-indigo-500 pl-3">
-                Review syslog event streams around detection timestamp. Check IP address reputation and verify if subsequent target authentication requests completed successfully.
+                Use the source event, indicators, and any linked incident to continue the investigation. The API does not provide additional guidance for this alert.
               </p>
             </div>
           </CardContent>

@@ -3,5 +3,5 @@ pydantic==2.5.2
 pydantic-settings==2.1.0
 SQLAlchemy==2.0.23
 asyncpg==0.29.0
-torch==2.2.2
+redis==5.0.6
 numpy==1.26.2

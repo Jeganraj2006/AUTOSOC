@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useAlerts } from "@/hooks/use-alerts";
+import { useAlertSearch } from "@/hooks/use-alerts";
 import {
   Table,
   TableBody,
@@ -12,45 +12,53 @@ import {
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SeverityBadge, StatusIndicator } from "@/components/ui/soc-indicators";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
-import { AlertCircle, RefreshCw, XCircle, ArrowRight } from "lucide-react";
+import { RefreshCw, XCircle, ArrowRight, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
 
 export default function AlertsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedSeverity, setSelectedSeverity] = useState<string>("all");
+  const [searchText, setSearchText] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const queryParams = {
+    q: searchText.trim() || undefined,
     status: selectedStatus === "all" ? undefined : selectedStatus,
     severity: selectedSeverity === "all" ? undefined : selectedSeverity,
-    limit: 100,
+    limit: 50,
+    offset,
   };
 
   const {
-    data: alerts,
+    data: alertPage,
     isLoading,
     isError,
     refetch,
     isFetching,
-  } = useAlerts(queryParams);
+  } = useAlertSearch(queryParams);
+  const alerts = alertPage?.alerts ?? [];
 
   const handleClearFilters = () => {
     setSelectedStatus("all");
     setSelectedSeverity("all");
+    setSearchText("");
+    setOffset(0);
   };
 
   // 1. Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 font-mono">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Alerts</h2>
-            <p className="text-xs text-zinc-500">Security detections requiring analyst attention</p>
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="Alert triage"
+          description="Review persisted detections, their current triage status, and available investigation context."
+        />
 
         {/* Filters Skeletons */}
         <div className="flex flex-wrap gap-3 items-center">
@@ -60,7 +68,7 @@ export default function AlertsPage() {
         </div>
 
         {/* Table Skeletons */}
-        <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+        <div className="soc-table-wrap">
           <div className="p-4 border-b border-zinc-900 flex gap-4">
             <Skeleton className="h-4 w-24 bg-zinc-900" />
             <Skeleton className="h-4 w-20 bg-zinc-900" />
@@ -85,35 +93,28 @@ export default function AlertsPage() {
   // 2. Error State
   if (isError) {
     return (
-      <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-red-900/40 bg-red-950/10 p-6 text-center font-mono">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-500 animate-pulse" />
-        <h3 className="text-lg font-bold text-red-400">Unable to load alerts</h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-2 mb-6">
-          There was an error communicating with the alerts API. Confirm your session state and retry.
-        </p>
-        <Button
-          onClick={() => refetch()}
-          className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/30 text-red-400 text-xs px-4"
-        >
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-          Retry Request
-        </Button>
+      <div className="space-y-6">
+        <PageHeader
+          title="Alert triage"
+          description="Review persisted detections, their current triage status, and available investigation context."
+        />
+        <OperationalState
+          kind="error"
+          title="Alerts are unavailable"
+          description="The alert service did not return a usable response. Confirm your session, then retry the request."
+          action={<RetryButton onClick={() => refetch()} disabled={isFetching} />}
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 font-mono">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Alerts</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Security detections requiring analyst attention
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="Alert triage"
+        description="Review persisted detections, their current triage status, and available investigation context."
+        actions={<div className="flex items-center gap-3">
           <Button
             onClick={() => refetch()}
             disabled={isFetching}
@@ -123,11 +124,12 @@ export default function AlertsPage() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin text-indigo-400" : ""}`} />
             Refresh
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Filter Controls Row */}
-      <div className="flex flex-wrap gap-4 items-center bg-zinc-950/40 p-4 border border-zinc-900 rounded-lg">
+      <div className="soc-surface flex flex-wrap items-center gap-4 rounded-xl p-4">
+        <div className="flex items-center gap-2"><label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="alert-search">Search</label><Input id="alert-search" value={searchText} onChange={(event) => { setSearchText(event.target.value); setOffset(0); }} placeholder="ID, title, description" className="h-8 w-52 text-xs" /><Search className="size-4 text-muted-foreground" aria-hidden="true" /></div>
         {/* Status Filter */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-zinc-500 uppercase font-semibold">Status:</span>
@@ -164,7 +166,7 @@ export default function AlertsPage() {
         </div>
 
         {/* Reset Buttons */}
-        {(selectedStatus !== "all" || selectedSeverity !== "all") && (
+        {(selectedStatus !== "all" || selectedSeverity !== "all" || searchText !== "") && (
           <Button
             onClick={handleClearFilters}
             variant="ghost"
@@ -177,7 +179,8 @@ export default function AlertsPage() {
       </div>
 
       {/* Alerts Table */}
-      <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+      <div className="soc-table-wrap">
+        <div className="border-b border-border px-4 py-3 text-sm text-muted-foreground">{alertPage?.page.total ?? 0} alerts match the current server-side filter.</div>
         <Table>
           <TableHeader className="bg-zinc-950/60 border-b border-zinc-900">
             <TableRow className="hover:bg-transparent border-zinc-900">
@@ -191,7 +194,7 @@ export default function AlertsPage() {
           </TableHeader>
 
           <TableBody>
-            {!alerts || alerts.length === 0 ? (
+            {alerts.length === 0 ? (
               <TableRow className="hover:bg-transparent border-none">
                 <TableCell colSpan={6} className="text-center h-48 py-8">
                   <div className="flex flex-col items-center justify-center gap-2">
@@ -239,6 +242,7 @@ export default function AlertsPage() {
             )}
           </TableBody>
         </Table>
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3"><Button variant="outline" size="sm" disabled={offset === 0 || isFetching} onClick={() => setOffset((value) => Math.max(0, value - 50))}><ChevronLeft className="mr-1 size-4" />Previous</Button><Button variant="outline" size="sm" disabled={!alertPage || offset + 50 >= alertPage.page.total || isFetching} onClick={() => setOffset((value) => value + 50)}>Next<ChevronRight className="ml-1 size-4" /></Button></div>
       </div>
     </div>
   );

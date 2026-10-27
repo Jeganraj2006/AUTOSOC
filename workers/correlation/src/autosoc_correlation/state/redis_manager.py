@@ -1,8 +1,10 @@
 import redis
 import json
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +12,15 @@ class RedisStateManager:
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
         self.redis = redis.Redis(host=host, port=port, db=db, decode_responses=True)
         self.ttl = 86400  # Default TTL: 24 hours
+
+    @classmethod
+    def from_url(cls, redis_url: str) -> "RedisStateManager":
+        parsed = urlparse(redis_url)
+        return cls(
+            host=parsed.hostname or "localhost",
+            port=parsed.port or 6379,
+            db=int((parsed.path or "/0").lstrip("/") or 0),
+        )
         
     def _generate_key(self, entity_id: str, rule_id: str) -> str:
         return f"corr:{rule_id}:{entity_id}"
@@ -17,7 +28,7 @@ class RedisStateManager:
     def add_alert(self, entity_id: str, rule_id: str, alert_data: Dict[str, Any], window_seconds: int):
         key = self._generate_key(entity_id, rule_id)
         # Use a sorted set to keep alerts ordered by timestamp
-        timestamp = alert_data.get("timestamp")
+        timestamp = alert_data.get("detected_at") or alert_data.get("timestamp")
         
         # If timestamp is a string (e.g., ISO format), parse it or just use current time as score
         try:
@@ -61,5 +72,7 @@ class RedisStateManager:
         key = f"active_inc:{rule_id}:{entity_id}"
         self.redis.delete(key)
 
-# Global instance
-state_manager = RedisStateManager()
+# Docker workers must use the Compose DNS name rather than their own localhost.
+state_manager = RedisStateManager.from_url(
+    os.environ.get("REDIS_URL", "redis://redis:6379/2")
+)

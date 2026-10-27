@@ -7,6 +7,7 @@ from autosoc_normalization.registry import parser_registry
 from autosoc_normalization.consumer import NormalizationConsumer
 from autosoc_normalization.publisher import EventPublisher
 from autosoc_normalization.storage.opensearch import OpenSearchStorage
+from autosoc_api.services.worker_reliability import RedisRetryState
 
 # Import all parsers to register them
 from autosoc_normalization.parsers import (
@@ -38,7 +39,14 @@ async def main():
     
     publisher = EventPublisher()
     opensearch = OpenSearchStorage(settings.OPENSEARCH_HOSTS)
-    consumer = NormalizationConsumer(publisher, opensearch)
+    retry_state = RedisRetryState(
+        settings.REDIS_URL,
+        "normalization",
+        max_attempts=settings.RETRY_MAX_ATTEMPTS,
+        base_delay_seconds=settings.RETRY_BASE_DELAY_SECONDS,
+        max_delay_seconds=settings.RETRY_MAX_DELAY_SECONDS,
+    )
+    consumer = NormalizationConsumer(publisher, opensearch, retry_state)
     
     await opensearch.initialize_templates()
     await publisher.start()
@@ -67,6 +75,7 @@ async def main():
         await consumer_task
         await publisher.stop()
         await opensearch.close()
+        await retry_state.close()
         logger.info("Shutdown complete.")
 
 if __name__ == "__main__":

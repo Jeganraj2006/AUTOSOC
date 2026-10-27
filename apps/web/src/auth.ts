@@ -104,8 +104,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async jwt({ token, account, profile }) {
       if (account?.access_token) {
+        const accountWithExpiry = account as typeof account & { expires_in?: number };
         token.accessToken = account.access_token;
-        token.accessTokenExpires = (account.expires_at ?? 0) * 1000;
+        // Some Keycloak/Auth.js combinations omit ``expires_at`` on the
+        // initial authorization-code exchange but do provide ``expires_in``.
+        // Treating the omission as epoch zero immediately attempted a refresh
+        // and discarded an otherwise valid new session.
+        const advertisedLifetime = accountWithExpiry.expires_in;
+        token.accessTokenExpires = Date.now() +
+          (typeof advertisedLifetime === "number" && advertisedLifetime > 0
+            ? advertisedLifetime
+            : 300) * 1000;
         // Kept only in the encrypted Auth.js JWT; it is never added to Session.
         token.refreshToken = account.refresh_token;
       }

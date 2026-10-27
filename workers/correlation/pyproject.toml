@@ -5,15 +5,31 @@ description = "AutoSOC Alert Correlation Worker"
 authors = [
     { name = "AutoSOC Team" }
 ]
-requires-python = ">=3.11"
+# autosoc-api is a local dependency and requires Python 3.12 or newer.
+requires-python = ">=3.12"
 dependencies = [
     "fastkafka",
+    "aiokafka>=0.10.0",
     "pydantic",
     "pyyaml",
     "redis",
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
     "autosoc-schemas",
     "autosoc-api"
 ]
+
+[project.optional-dependencies]
+# Test tooling remains opt-in so production worker images do not carry pytest.
+dev = [
+    "pytest>=8.2.2",
+    "pytest-asyncio>=0.23.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling"]
@@ -24,4 +40,4 @@ packages = ["src/autosoc_correlation"]
 
 [tool.uv.sources]
 autosoc-api = { path = "../../apps/api" }
-autosoc-schemas = { path = "../../packages/event-schemas" }
+autosoc-schemas = { path = "../../packages/event-schemas", editable = true }

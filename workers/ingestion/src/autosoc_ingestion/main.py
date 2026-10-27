@@ -59,7 +59,10 @@ async def lifespan(app: FastAPI):
         publisher=app.state.publisher,
         archive=app.state.archive,
         dedup=app.state.dedup,
-        health_tracker=app.state.health_tracker
+        health_tracker=app.state.health_tracker,
+        retry_max_attempts=settings.RETRY_MAX_ATTEMPTS,
+        retry_base_delay_seconds=settings.RETRY_BASE_DELAY_SECONDS,
+        retry_max_delay_seconds=settings.RETRY_MAX_DELAY_SECONDS,
     )
 
     yield

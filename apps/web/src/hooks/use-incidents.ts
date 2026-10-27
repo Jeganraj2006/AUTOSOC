@@ -16,7 +16,7 @@ export interface IncidentResponse {
   assignee_id?: string;
   alert_count: number;
   event_count: number;
-  primary_entities?: any[];
+  primary_entities?: unknown[];
   tags?: string[];
   correlation_rule_ids?: string[];
   candidate_mitre_references?: string[];
@@ -60,7 +60,7 @@ export interface AgentResult {
   risk_assessment?: AgentResultSection;
   prediction_analysis?: AgentResultSection;
   response_recommendation?: AgentResultSection;
-  reporting?: any;
+  reporting?: Record<string, unknown>;
 }
 
 export interface AgentExecutionResponse {
@@ -75,6 +75,9 @@ export interface AgentExecutionResponse {
   completed_at?: string;
   current_step?: string;
   steps_completed: number;
+  retry_count: number;
+  node_statuses?: Record<string, string>;
+  node_timestamps?: Record<string, string>;
   model_provider?: string;
   model_name?: string;
   model_version?: string;
@@ -83,6 +86,8 @@ export interface AgentExecutionResponse {
   duration_seconds?: number;
   result_data?: AgentResult;
   failure_reason?: string;
+  error_info?: Record<string, unknown>;
+  evidence_references?: string[];
   trace_id?: string;
 }
 

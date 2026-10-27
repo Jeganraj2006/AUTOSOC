@@ -3,16 +3,30 @@ import io
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from autosoc_api.core.config import settings
 from autosoc_api.auth.dependencies import require_permission
 from autosoc_api.auth.models import Principal
 from autosoc_api.auth.permissions import Permissions
 from autosoc_api.ml.service import MLDetectionService
+from autosoc_api.schemas.search import (
+    DashboardAggregateResponse,
+    EventSearchResponse,
+    IngestionSourceSummary,
+    PageMetadata,
+)
 from autosoc_schemas.events.normalized import NormalizedSecurityEvent
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, Body
 import httpx
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from autosoc_api.db.session import get_db_session
+from autosoc_api.db.models.alert import Alert, AlertStatus
+from autosoc_api.db.models.incident import Incident, IncidentSeverity
+from autosoc_api.db.models.response import ResponseApproval
+from autosoc_api.db.models.agent_execution import AgentExecution, AgentExecutionStatus
+from autosoc_api.db.models.data_source import DataSource
 
 router = APIRouter()
 
@@ -56,7 +70,7 @@ async def get_dashboard_summary(
     }
 
     try:
-        resp = await client.post("/autosoc-events-v1-*/_search", json=query)
+        resp = await client.post("/autosoc-events-v*/_search", json=query)
         if resp.status_code in (400, 404):
             # Index does not exist yet or no matching documents
             return {
@@ -96,74 +110,261 @@ async def get_dashboard_summary(
         }
 
 
-
-import ipaddress
-
-@router.get("/", response_model=Dict[str, Any])
-async def search_events(
-    category: Optional[str] = Query(None, description="Filter by event category"),
-    source_ip: Optional[str] = Query(None, description="Filter by source IP"),
-    q: Optional[str] = Query(None, description="General search term"),
-    query: Optional[str] = Query(None, description="General search term alias"),
-    limit: int = Query(50, ge=1, le=1000),
+@router.get("/dashboard/operations", response_model=DashboardAggregateResponse)
+async def get_dashboard_operations(
     current_user: Principal = Depends(require_permission(Permissions.EVENTS_READ)),
     client: httpx.AsyncClient = Depends(get_opensearch_client),
-) -> Dict[str, Any]:
-    """
-    Query normalized/enriched security events safely. Handles full/partial IP queries gracefully.
-    """
-    must_clauses: List[Dict[str, Any]] = []
-    ip_search = source_ip or q or query
+    db: AsyncSession = Depends(get_db_session),
+) -> DashboardAggregateResponse:
+    """Return backend-generated operational counts for the last 24 hours."""
+    partial_failures: list[str] = []
+    event_count: int | None = None
+    try:
+        response = await client.post(
+            "/autosoc-events-v*/_search",
+            json={
+                "size": 0,
+                "track_total_hits": True,
+                "query": {"range": {"event_time": {"gte": "now-24h/h", "lte": "now/h"}}},
+            },
+        )
+        if response.status_code == 404:
+            event_count = 0
+        else:
+            response.raise_for_status()
+            event_count = response.json().get("hits", {}).get("total", {}).get("value", 0)
+    except httpx.HTTPError:
+        partial_failures.append("OpenSearch event count is unavailable.")
 
+    open_alerts_result = await db.execute(
+        select(func.count()).select_from(Alert).where(Alert.status.in_([AlertStatus.NEW, AlertStatus.INVESTIGATING]))
+    )
+    critical_incidents_result = await db.execute(
+        select(func.count()).select_from(Incident).where(Incident.severity == IncidentSeverity.CRITICAL)
+    )
+    pending_approvals_result = await db.execute(
+        select(func.count()).select_from(ResponseApproval).where(ResponseApproval.decision == "pending")
+    )
+    completed_investigations_result = await db.execute(
+        select(func.count()).select_from(AgentExecution).where(AgentExecution.status == AgentExecutionStatus.COMPLETED)
+    )
+    running_investigations_result = await db.execute(
+        select(func.count()).select_from(AgentExecution).where(AgentExecution.status == AgentExecutionStatus.RUNNING)
+    )
+    failed_investigations_result = await db.execute(
+        select(func.count()).select_from(AgentExecution).where(AgentExecution.status == AgentExecutionStatus.FAILED)
+    )
+    sources_result = await db.execute(select(DataSource).order_by(DataSource.name.asc()))
+    sources = list(sources_result.scalars().all())
+    successful_ingestions = [source.last_successful_ingestion for source in sources if source.last_successful_ingestion]
+
+    return DashboardAggregateResponse(
+        time_range="last_24_hours",
+        event_count=event_count,
+        open_alert_count=open_alerts_result.scalar_one(),
+        critical_incident_count=critical_incidents_result.scalar_one(),
+        pending_approval_count=pending_approvals_result.scalar_one(),
+        completed_investigation_count=completed_investigations_result.scalar_one(),
+        running_investigation_count=running_investigations_result.scalar_one(),
+        failed_investigation_count=failed_investigations_result.scalar_one(),
+        ingestion_sources=[
+            IngestionSourceSummary(
+                id=source.id,
+                name=source.name,
+                status=source.health_state.value,
+                last_successful_ingestion=source.last_successful_ingestion,
+            )
+            for source in sources
+        ],
+        last_successful_data_refresh=max(successful_ingestions) if successful_ingestions else None,
+        partial_failures=partial_failures,
+    )
+
+
+_EVENT_SORT_FIELDS = {
+    "event_time": "event_time",
+    "received_at": "received_at",
+    "event_category": "event_category",
+    "source_id": "source_id",
+}
+
+
+def escape_wildcard_query(value: str) -> str:
+    """Treat user text literally before using a keyword wildcard fallback."""
+    return value.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
+
+
+def build_event_search_query(
+    *,
+    category: str | None,
+    source_id: str | None,
+    severity: str | None,
+    source_ip: str | None,
+    destination_ip: str | None,
+    file_hash: str | None,
+    text_query: str | None,
+    start_time: datetime | None,
+    end_time: datetime | None,
+    limit: int,
+    offset: int,
+    sort_field: str,
+    sort_direction: str,
+) -> dict[str, Any]:
+    """Create an explicit OpenSearch query without client-side filtering.
+
+    ``_id`` is the stable tiebreaker mapped consistently across the retained
+    v1 (text ID) and current v2 (keyword ID) indices.  Sorting on either
+    normalized-event ID field would return partial shards and hide current
+    events when both index versions are queried.
+    """
+    filters: list[dict[str, Any]] = []
     if category:
-        must_clauses.append({"term": {"event_category": category}})
-
-    if ip_search:
-        # Check if it is a valid full IP address or CIDR subnet
-        try:
-            ipaddress.ip_network(ip_search, strict=False)
-            must_clauses.append({"term": {"source_ip": ip_search}})
-        except ValueError:
-            # Partial IP string like "192.168" or wildcard
-            must_clauses.append({
-                "wildcard": {
-                    "source_ip": f"*{ip_search}*"
+        filters.append({"term": {"event_category": category}})
+    if source_id:
+        filters.append({"term": {"source_id": source_id}})
+    if severity:
+        filters.append({"term": {"severity_source": severity}})
+    if source_ip:
+        filters.append({"term": {"source_ip": source_ip}})
+    if destination_ip:
+        filters.append({"term": {"destination_ip": destination_ip}})
+    if file_hash:
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"file_hashes.sha256": file_hash}},
+                        {"term": {"file_hashes.sha1": file_hash}},
+                        {"term": {"file_hashes.md5": file_hash}},
+                    ],
+                    "minimum_should_match": 1,
                 }
-            })
+            }
+        )
+    if start_time or end_time:
+        event_range: dict[str, str] = {}
+        if start_time:
+            event_range["gte"] = start_time.isoformat()
+        if end_time:
+            event_range["lte"] = end_time.isoformat()
+        filters.append({"range": {"event_time": event_range}})
 
-    os_query = {
+    must: list[dict[str, Any]] = []
+    if text_query:
+        escaped_text = escape_wildcard_query(text_query)
+        must.append(
+            {
+                "bool": {
+                    "should": [
+                        {
+                            "simple_query_string": {
+                                "query": text_query,
+                                "fields": [
+                                    "message^3",
+                                    "event_type^2",
+                                    "event_category^2",
+                                    "source_id",
+                                    "hostname",
+                                    "username",
+                                    "process_name",
+                                    "command_line",
+                                ],
+                                "default_operator": "and",
+                            }
+                        },
+                        {
+                            "wildcard": {
+                                "message": {"value": f"*{escaped_text}*", "case_insensitive": True}
+                            }
+                        },
+                        {
+                            "wildcard": {
+                                "event_type": {"value": f"*{escaped_text}*", "case_insensitive": True}
+                            }
+                        },
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+
+    bool_query: dict[str, Any] = {"filter": filters, "must": must}
+    return {
+        "from": offset,
         "size": limit,
-        "sort": [{"event_time": {"order": "desc"}}],
-        "query": (
-            {"bool": {"must": must_clauses}}
-            if must_clauses
-            else {"match_all": {}}
-        ),
+        "track_total_hits": True,
+        "sort": [
+            {_EVENT_SORT_FIELDS[sort_field]: {"order": sort_direction}},
+            {"_id": {"order": sort_direction}},
+        ],
+        "query": {"bool": bool_query},
     }
 
-    try:
-        resp = await client.post("/autosoc-events-v1-*/_search", json=os_query)
-        if resp.status_code == 400:
-            # Fallback to match all if mapping exception occurs on partial string
-            fallback_query = {"size": limit, "sort": [{"event_time": {"order": "desc"}}], "query": {"match_all": {}}}
-            resp = await client.post("/autosoc-events-v1-*/_search", json=fallback_query)
+@router.get("/", response_model=EventSearchResponse)
+async def search_events(
+    category: Optional[str] = Query(None, description="Filter by event category"),
+    source_id: Optional[str] = Query(None, max_length=255, description="Filter by source identifier"),
+    severity: Optional[str] = Query(None, max_length=64, description="Filter by source severity"),
+    source_ip: Optional[str] = Query(None, max_length=64, description="Filter by source IP"),
+    destination_ip: Optional[str] = Query(None, max_length=64, description="Filter by destination IP"),
+    file_hash: Optional[str] = Query(None, min_length=16, max_length=128, description="Filter by indexed file hash"),
+    q: Optional[str] = Query(None, max_length=256, description="General search term"),
+    query: Optional[str] = Query(None, max_length=256, description="General search term alias"),
+    start_time: Optional[datetime] = Query(None, description="Inclusive event timestamp"),
+    end_time: Optional[datetime] = Query(None, description="Inclusive event timestamp"),
+    sort_field: Literal["event_time", "received_at", "event_category", "source_id"] = "event_time",
+    sort_direction: Literal["asc", "desc"] = "desc",
+    limit: int = Query(50, ge=1, le=250),
+    offset: int = Query(0, ge=0, le=100_000),
+    current_user: Principal = Depends(require_permission(Permissions.EVENTS_READ)),
+    client: httpx.AsyncClient = Depends(get_opensearch_client),
+) -> EventSearchResponse:
+    """
+    Search normalized/enriched events with validated filters and server paging.
+    """
+    if start_time and end_time and start_time > end_time:
+        raise HTTPException(status_code=422, detail="start_time must be before end_time")
+    if q and query and q != query:
+        raise HTTPException(status_code=422, detail="Use either q or query, not both")
+    text_query = q or query
+    os_query = build_event_search_query(
+        category=category,
+        source_id=source_id,
+        severity=severity,
+        source_ip=source_ip,
+        destination_ip=destination_ip,
+        file_hash=file_hash,
+        text_query=text_query,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+        offset=offset,
+        sort_field=sort_field,
+        sort_direction=sort_direction,
+    )
 
+    try:
+        resp = await client.post("/autosoc-events-v*/_search", json=os_query)
+        if resp.status_code == 404:
+            return EventSearchResponse(
+                total=0, events=[], page=PageMetadata(total=0, limit=limit, offset=offset)
+            )
         resp.raise_for_status()
         data = resp.json()
+        if data.get("_shards", {}).get("failed", 0):
+            raise HTTPException(status_code=502, detail="OpenSearch event search returned shard failures")
 
         hits = data.get("hits", {}).get("hits", [])
         events = [hit["_source"] for hit in hits]
 
-        return {
-            "total": data.get("hits", {}).get("total", {}).get("value", 0),
-            "events": events,
-        }
-    except Exception as e:
-        return {
-            "total": 0,
-            "events": [],
-            "error": str(e)
-        }
+        total = data.get("hits", {}).get("total", {}).get("value", 0)
+        return EventSearchResponse(
+            total=total,
+            events=events,
+            page=PageMetadata(total=total, limit=limit, offset=offset),
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail="OpenSearch event search failed") from exc
 
 
 @router.get("/{event_id}", response_model=Dict[str, Any])
@@ -183,7 +384,7 @@ async def get_event(
         }
     }
     try:
-        resp = await client.post("/autosoc-events-v1-*/_search", json=query)
+        resp = await client.post("/autosoc-events-v*/_search", json=query)
         resp.raise_for_status()
         data = resp.json()
 
@@ -239,6 +440,7 @@ async def upload_events_csv(
         "username": ["username", "user", "account"],
         "message": ["message", "msg", "log", "description"],
         "mitre": ["mitre_technique", "mitre", "technique", "technique_id"],
+        "file_hash": ["file_hash", "sha256", "sha1", "md5"],
     }
 
     processed = 0
@@ -287,6 +489,7 @@ async def upload_events_csv(
             user = get_field(row, aliases_map["username"])
             msg = get_field(row, aliases_map["message"])
             mitre_id = get_field(row, aliases_map["mitre"])
+            file_hash = get_field(row, aliases_map["file_hash"])
 
             dst_port_str = get_field(row, aliases_map["destination_port"])
             dst_port = None
@@ -365,6 +568,9 @@ async def upload_events_csv(
                 "candidate_mitre_techniques"
             }
             doc = {k: v for k, v in doc.items() if k in allowed_properties and v is not None}
+            if file_hash:
+                hash_algorithm = "sha256" if len(file_hash) == 64 else "sha1" if len(file_hash) == 40 else "md5"
+                doc["file_hashes"] = {hash_algorithm: file_hash.lower()}
 
             # NDJSON _bulk action line
             bulk_data += f'{{"index": {{"_index": "{index_name}", "_id": "{norm_event.normalized_event_id}"}}}}\n'
@@ -461,6 +667,7 @@ async def upload_events_csv(
 
                         new_alert = Alert(
                             id=uuid.uuid4(),
+                            detection_id=uuid.uuid5(uuid.NAMESPACE_URL, f"csv-ingestion:{evt['event_id']}"),
                             incident_id=new_incident.id,
                             title=f"Alert: {evt['type'].upper().replace('_', ' ')} Detected ({evt['host']})",
                             description=f"Automated alert generated from ingested CSV event {evt['event_id']}. {evt['msg']}",
@@ -641,7 +848,7 @@ async def detect_anomalies(
     try:
         # Fetch events from OpenSearch
         resp = await client.post(
-            "/autosoc-events-v1-*/_search",
+            "/autosoc-events-v*/_search",
             json=query,
         )
         resp.raise_for_status()
@@ -721,6 +928,7 @@ async def detect_anomalies(
                         
                         new_alert = Alert(
                             id=uuid.uuid4(),
+                            detection_id=uuid.uuid5(uuid.NAMESPACE_URL, f"ml-anomaly:{a['event_id']}"),
                             incident_id=new_incident.id,
                             title=f"ML Anomaly Alert: Pattern Deviation (Score {a_score})",
                             description=f"Isolation Forest flagged outlier event {a['event_id']}. Decision score: {a.get('model_score')}. {e.get('message', '')}",

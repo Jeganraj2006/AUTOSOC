@@ -35,14 +35,25 @@ class DeduplicationService:
         if not self.client:
             logger.warning("Redis client not initialized, bypassing deduplication check (failing open)")
             return False
-            
+
         key = f"dedup:{source_id}:{payload_hash}"
         try:
-            # SETNX (set if not exists) is atomic
+            # SETNX (set if not exists) atomically reserves a payload before
+            # archive/publish.  The reservation survives worker restarts and
+            # is deliberately released only if downstream delivery fails.
             is_new = await self.client.set(key, "1", ex=self.ttl_seconds, nx=True)
-            # is_new is True if the key was set, meaning it's unique
             return not bool(is_new)
-        except Exception as e:
-            logger.error(f"Redis error during deduplication check: {e}")
-            # Fail open: if redis is down, assume not duplicate to prevent silent event loss
+        except Exception as exc:
+            logger.error("Redis error during deduplication check: %s", exc)
+            # Retain the availability policy for an unavailable Redis, while
+            # making the normal path deterministic and idempotent.
             return False
+
+    async def release(self, source_id: str, payload_hash: str) -> None:
+        """Release an unsuccessful delivery reservation for safe source retry."""
+        if not self.client:
+            return
+        try:
+            await self.client.delete(f"dedup:{source_id}:{payload_hash}")
+        except Exception:
+            logger.exception("Unable to release failed ingestion deduplication reservation")

@@ -14,6 +14,23 @@ class DetectionEngine:
         self.registry = registry
         self.state_manager = state_manager
 
+    @staticmethod
+    def suppression_group_key(event: NormalizedSecurityEvent) -> str:
+        """Scope match-rule suppression to the event identity when available.
+
+        A process-wide ``global`` key suppresses independent sources after the
+        first match.  That is particularly unsafe for authentication rules:
+        one successful login must not hide a later success from a different
+        source IP.  Keep the global fallback only for events that carry none
+        of the stable identity fields below.
+        """
+        parts = []
+        for field in ("source_ip", "destination_ip", "username", "hostname"):
+            value = getattr(event, field, None)
+            if value:
+                parts.append(f"{field}={value}")
+        return "|".join(parts) if parts else "global"
+
     async def evaluate_event(self, event: NormalizedSecurityEvent) -> List[DetectionResult]:
         results = []
         rules = self.registry.get_rules_by_category(event.event_category)
@@ -61,12 +78,13 @@ class DetectionEngine:
                         results.append(alert)
                 
                 else: # Match, IOC, Sigma
-                    # Simple rule match (Stateless)
-                    # Check global rule suppression if configured (for simplicity we use group_key 'global')
-                    if await self.state_manager.is_suppressed(rule.rule_id, "global"):
+                    # Simple rule match (Stateless).  Suppression is scoped to
+                    # the source/user context rather than every event globally.
+                    group_key = self.suppression_group_key(event)
+                    if await self.state_manager.is_suppressed(rule.rule_id, group_key):
                         continue
                     
-                    await self.state_manager.set_suppression(rule.rule_id, "global", rule.threshold.suppression_window if rule.threshold else 300)
+                    await self.state_manager.set_suppression(rule.rule_id, group_key, rule.threshold.suppression_window if rule.threshold else 300)
                     alert = AlertGenerator.generate(rule, event)
                     results.append(alert)
 

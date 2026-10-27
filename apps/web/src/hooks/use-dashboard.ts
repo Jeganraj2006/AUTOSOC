@@ -9,6 +9,20 @@ export interface DashboardSummary {
   sources: { source: string; count: number }[];
 }
 
+export interface DashboardOperations {
+  time_range: string;
+  event_count: number | null;
+  open_alert_count: number | null;
+  critical_incident_count: number | null;
+  pending_approval_count: number | null;
+  completed_investigation_count: number | null;
+  running_investigation_count: number | null;
+  failed_investigation_count: number | null;
+  ingestion_sources: { id: string; name: string; status: string; last_successful_ingestion?: string }[];
+  last_successful_data_refresh?: string;
+  partial_failures: string[];
+}
+
 export function useDashboardSummary() {
   const { data: session, status } = useSession();
 
@@ -22,6 +36,18 @@ export function useDashboardSummary() {
       }),
     enabled: status === "authenticated" && !!session?.accessToken,
     refetchInterval: 1000 * 60, // Refetch every minute
+  });
+}
+
+export function useDashboardOperations() {
+  const { data: session, status } = useSession();
+  return useQuery({
+    queryKey: ["dashboard", "operations"],
+    queryFn: () => fetchApi<DashboardOperations>("/events/dashboard/operations", {
+      headers: { Authorization: `Bearer ${session?.accessToken}` },
+    }),
+    enabled: status === "authenticated" && !!session?.accessToken,
+    refetchInterval: 1000 * 60,
   });
 }
 
@@ -39,6 +65,7 @@ export function useSeedDashboardTelemetry() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "operations"] });
     },
   });
 }

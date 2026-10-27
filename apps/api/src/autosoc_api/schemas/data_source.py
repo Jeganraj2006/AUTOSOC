@@ -2,10 +2,11 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
+from autosoc_api.db.models.data_source import DataSourceType
 
 class DataSourceBase(BaseModel):
     name: str = Field(..., max_length=255)
-    source_type: str = Field(..., max_length=50)
+    source_type: DataSourceType
     description: Optional[str] = Field(None, max_length=1000)
     enabled: bool = True
     environment: str = Field(default="production", max_length=50)
@@ -28,6 +29,12 @@ class DataSourceResponse(DataSourceBase):
     
     class Config:
         from_attributes = True
+
+
+class DataSourceProvisionedResponse(DataSourceResponse):
+    """A creation-only response that returns the generated ingestion key once."""
+
+    api_key: str
 
 class DataSourceListResponse(BaseModel):
     items: list[DataSourceResponse]

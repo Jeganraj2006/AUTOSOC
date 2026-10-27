@@ -1,8 +1,9 @@
 from sqlalchemy import String, Enum, ForeignKey, JSON
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from autosoc_api.db.base import Base, TimestampMixin, UUIDMixin
 import enum
+import uuid
 from typing import Optional
 
 class AlertSeverity(str, enum.Enum):
@@ -24,6 +25,7 @@ class Alert(Base, UUIDMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(2000))
     severity: Mapped[AlertSeverity] = mapped_column(Enum(AlertSeverity, name="alert_severity_enum"), nullable=False, index=True)
     status: Mapped[AlertStatus] = mapped_column(Enum(AlertStatus, name="alert_status_enum"), default=AlertStatus.NEW, nullable=False, index=True)
+    detection_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     
     # Context
     source_event_id: Mapped[str | None] = mapped_column(String(255))

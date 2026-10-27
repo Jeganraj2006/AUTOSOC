@@ -10,17 +10,29 @@ export interface AlertResponse {
   status: string;
   source_event_id?: string;
   rule_id?: string;
-  indicators_json?: any;
+  indicators_json?: Record<string, unknown> | unknown[];
   incident_id?: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface UseAlertsParams {
+  q?: string;
   status?: string;
   severity?: string;
+  incident_id?: string;
+  rule_id?: string;
+  start_time?: string;
+  end_time?: string;
+  sort_field?: "created_at" | "updated_at" | "severity" | "status" | "title";
+  sort_direction?: "asc" | "desc";
   limit?: number;
   offset?: number;
+}
+
+export interface AlertPage {
+  alerts: AlertResponse[];
+  page: { total: number; limit: number; offset: number };
 }
 
 export function useAlerts(params: UseAlertsParams = {}) {
@@ -39,6 +51,24 @@ export function useAlerts(params: UseAlertsParams = {}) {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
+      });
+    },
+    enabled: authStatus === "authenticated" && !!session?.accessToken,
+  });
+}
+
+export function useAlertSearch(params: UseAlertsParams = {}) {
+  const { data: session, status: authStatus } = useSession();
+
+  return useQuery({
+    queryKey: ["alerts", "search", params],
+    queryFn: () => {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== "") searchParams.append(key, String(value));
+      });
+      return fetchApi<AlertPage>(`/alerts/search?${searchParams.toString()}`, {
+        headers: { Authorization: `Bearer ${session?.accessToken}` },
       });
     },
     enabled: authStatus === "authenticated" && !!session?.accessToken,

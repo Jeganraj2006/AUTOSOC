@@ -25,7 +25,7 @@ class RuleCondition(BaseModel):
         return data
 
 class ThresholdConfig(BaseModel):
-    count: int = Field(gt=1, description="Number of events to match")
+    count: int = Field(ge=1, description="Number of events to match")
     timeframe: int = Field(gt=0, description="Time window in seconds")
     group_by: List[str] = Field(default_factory=list, description="Fields to group the threshold by (e.g. source_ip, username)")
     suppression_window: int = Field(default=3600, description="Suppress duplicate alerts for this group in seconds")

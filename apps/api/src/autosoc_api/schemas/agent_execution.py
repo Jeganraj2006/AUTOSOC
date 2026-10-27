@@ -56,6 +56,9 @@ class AgentExecutionResponse(AgentExecutionBase):
     requested_by: Optional[str] = None
     current_step: Optional[str] = None
     steps_completed: int
+    retry_count: int = 0
+    node_statuses: Optional[Dict[str, str]] = None
+    node_timestamps: Optional[Dict[str, str]] = None
     model_provider: Optional[str] = None
     model_name: Optional[str] = None
     model_version: Optional[str] = None
@@ -64,6 +67,8 @@ class AgentExecutionResponse(AgentExecutionBase):
     duration_seconds: Optional[int] = None
     result_data: Optional[Dict[str, Any]] = None
     failure_reason: Optional[str] = None
+    error_info: Optional[Dict[str, Any]] = None
+    evidence_references: Optional[List[str]] = None
     trace_id: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)

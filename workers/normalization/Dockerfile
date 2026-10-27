@@ -1,5 +1,5 @@
 FROM python:3.12-slim-bookworm
-COPY --from=ghcr.io/astral-sh/uv:0.2.11 /uv /bin/uv
+RUN pip install --no-cache-dir uv==0.2.11
 ENV UV_SYSTEM_PYTHON=1
 ENV UV_PREVIEW=1
 WORKDIR /app

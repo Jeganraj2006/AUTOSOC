@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { canManageTriage } from "@/lib/monitoring";
 
 interface AgentInvestigationPanelProps {
   incidentId: string;
@@ -35,17 +36,15 @@ export function AgentInvestigationPanel({
   const execution = executions && executions.length > 0 ? executions[0] : null;
 
   // Authorization checks
-  const isAuthorizedToTrigger =
-    currentUser?.is_superuser ||
-    currentUser?.roles.includes("admin") ||
-    currentUser?.roles.includes("soc_analyst");
+  const isAuthorizedToTrigger = canManageTriage(currentUser);
+  const executionStatus = execution?.status.toLowerCase();
 
   // Refresh while an investigation is running/queued
   useEffect(() => {
     if (
       !execution ||
-      (execution.status !== "RUNNING" &&
-        execution.status !== "QUEUED")
+      (executionStatus !== "running" &&
+        executionStatus !== "queued")
     ) {
       return;
     }
@@ -55,7 +54,7 @@ export function AgentInvestigationPanel({
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [execution, refetch]);
+  }, [execution, executionStatus, refetch]);
 
   const triggerInvestigation = () => {
     if (triggerAgentMutation.isPending || isRunning) return;
@@ -63,8 +62,8 @@ export function AgentInvestigationPanel({
   };
 
   const isRunning =
-    execution?.status === "RUNNING" ||
-    execution?.status === "QUEUED";
+    executionStatus === "running" ||
+    executionStatus === "queued";
 
   return (
     <div className="space-y-6">
@@ -72,10 +71,10 @@ export function AgentInvestigationPanel({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h3 className="text-lg font-medium">
-            Agentic AI Investigation
+            AI investigation
           </h3>
           <p className="text-sm text-muted-foreground">
-            Autonomous investigation for this incident
+            Incident-scoped graph execution with persisted evidence and model output.
           </p>
         </div>
 
@@ -123,7 +122,7 @@ export function AgentInvestigationPanel({
               No investigation has been run
             </p>
             <p className="mt-1 text-xs text-zinc-500 max-w-sm mx-auto">
-              Start an investigation to let the AI agents analyze this incident's correlated telemetry.
+              Start an authorized investigation to create a persisted graph execution for this incident.
             </p>
           </CardContent>
         </Card>
@@ -157,7 +156,7 @@ export function AgentInvestigationPanel({
 
           <CardContent className="space-y-4">
             {/* QUEUED */}
-            {execution.status === "QUEUED" && (
+            {executionStatus === "queued" && (
               <Alert className="bg-indigo-950/10 border-indigo-950 text-indigo-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <AlertTitle>
@@ -170,7 +169,7 @@ export function AgentInvestigationPanel({
             )}
 
             {/* RUNNING */}
-            {execution.status === "RUNNING" && (
+            {executionStatus === "running" && (
               <Alert className="bg-indigo-950/10 border-indigo-950 text-indigo-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <AlertTitle>
@@ -183,7 +182,7 @@ export function AgentInvestigationPanel({
             )}
 
             {/* COMPLETED */}
-            {execution.status === "COMPLETED" && (
+            {executionStatus === "completed" && (
               <>
                 <Alert className="bg-emerald-950/10 border-emerald-950 text-emerald-400">
                   <CheckCircle className="h-4 w-4" />
@@ -204,7 +203,7 @@ export function AgentInvestigationPanel({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 text-xs text-zinc-500 font-mono leading-relaxed">
-                      Investigation execution completed. Detailed risk assessment will appear here when the agent worker stores its results.
+                      {execution.result_data ? "Persisted investigation result data is available in the AI Investigation Center." : "The execution completed without persisted result sections."}
                     </CardContent>
                   </Card>
 
@@ -216,7 +215,7 @@ export function AgentInvestigationPanel({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 text-xs text-zinc-500 font-mono leading-relaxed">
-                      Agent recommendations will appear here once the investigation workflow produces its final response.
+                      Recommendations, when persisted, are available in the AI Investigation Center and remain subject to human review before any response action.
                     </CardContent>
                   </Card>
                 </div>
@@ -224,7 +223,7 @@ export function AgentInvestigationPanel({
             )}
 
             {/* FAILED */}
-            {execution.status === "FAILED" && (
+            {executionStatus === "failed" && (
               <Alert className="bg-red-950/10 border-red-950 text-red-400">
                 <XCircle className="h-4 w-4" />
                 <AlertTitle>
@@ -237,7 +236,7 @@ export function AgentInvestigationPanel({
             )}
 
             {/* CANCELLED */}
-            {execution.status === "CANCELLED" && (
+            {executionStatus === "cancelled" && (
               <Alert className="bg-zinc-950 border-zinc-900 text-zinc-400">
                 <XCircle className="h-4 w-4" />
                 <AlertTitle>
@@ -251,12 +250,12 @@ export function AgentInvestigationPanel({
 
             {/* Unknown status */}
             {![
-              "QUEUED",
-              "RUNNING",
-              "COMPLETED",
-              "FAILED",
-              "CANCELLED",
-            ].includes(execution.status) && (
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+            ].includes(executionStatus ?? "") && (
               <Alert>
                 <AlertTitle>
                   Status: {execution.status}

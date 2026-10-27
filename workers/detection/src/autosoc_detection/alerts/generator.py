@@ -23,8 +23,12 @@ class AlertGenerator:
         if rule.threshold:
             desc = f"Threshold triggered: {rule.threshold.count} events observed in {rule.threshold.timeframe}s. {desc}"
 
+        # A repeat delivery of the same normalized event must generate the
+        # same detection identity. Persistence can therefore acknowledge a
+        # replay without emitting duplicate alerts or incidents.
+        detection_identity = f"{rule.rule_id}:{rule.version}:{','.join(sorted(str(event_id) for event_id in event_ids))}"
         return DetectionResult(
-            detection_id=uuid.uuid4(),
+            detection_id=uuid.uuid5(uuid.NAMESPACE_URL, detection_identity),
             rule_id=rule.rule_id,
             rule_version=rule.version,
             rule_name=rule.name,
@@ -49,11 +53,19 @@ class AlertGenerator:
         seen = set()
         
         def add_entity(type_: str, val: Optional[str]):
-            if val and val not in seen:
+            entity_key = (type_, val)
+            if val and entity_key not in seen:
                 extracted.append(EntityRef(type=type_, value=val))
-                seen.add(val)
-                
+                seen.add(entity_key)
+
         for e in events:
+            # Direction is material to correlation.  Keep the legacy generic
+            # ``ip`` reference for existing consumers, but also publish the
+            # explicit source/destination identities used by correlation
+            # rules.  Without these, a source-IP rule treats the destination
+            # as another candidate and can open a spurious incident.
+            add_entity("source_ip", e.source_ip)
+            add_entity("destination_ip", e.destination_ip)
             add_entity("ip", e.source_ip)
             add_entity("ip", e.destination_ip)
             add_entity("user", e.username)

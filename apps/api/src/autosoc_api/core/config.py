@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     OPENSEARCH_HOSTS: str = "http://localhost:9200"
     REDPANDA_HOST: str = "localhost"
     REDPANDA_PORT: int = 19092
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OBJECT_STORAGE_HEALTH_URL: str = "http://localhost:9000"
     HEALTH_CHECK_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=10)
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "autosoc"

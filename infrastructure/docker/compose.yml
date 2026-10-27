@@ -72,21 +72,22 @@ services:
       retries: 5
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-06T17-38-46Z
+    # MinIO withdrew its public images and source binaries. SeaweedFS is an
+    # official signed S3-compatible replacement. This fixed 4.50 release uses
+    # the image's supported `weed mini` single-node mode. The service name
+    # remains `minio` so the MinIO Python SDK keeps the internal S3 endpoint.
+    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
     container_name: autosoc-minio
     environment:
-      MINIO_ROOT_USER: ${AUTOSOC_MINIO_ROOT_USER:?Set AUTOSOC_MINIO_ROOT_USER in infrastructure/docker/.env}
-      MINIO_ROOT_PASSWORD: ${AUTOSOC_MINIO_ROOT_PASSWORD:?Set AUTOSOC_MINIO_ROOT_PASSWORD in infrastructure/docker/.env}
-    command:
-      - server
-      - /data
-      - --console-address
-      - ":9001"
+      AWS_ACCESS_KEY_ID: ${AUTOSOC_MINIO_ROOT_USER:?Set AUTOSOC_MINIO_ROOT_USER in infrastructure/docker/.env}
+      AWS_SECRET_ACCESS_KEY: ${AUTOSOC_MINIO_ROOT_PASSWORD:?Set AUTOSOC_MINIO_ROOT_PASSWORD in infrastructure/docker/.env}
+      S3_BUCKET: autosoc-raw-events
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9000:8333"
+    volumes:
+      - ${AUTOSOC_MINIO_DATA_DIR:-E:/AUTOSOC/docker-data/minio}:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9333/cluster/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -114,7 +115,9 @@ services:
     restart: unless-stopped
     environment:
       REDPANDA_BROKERS: redpanda:9092
-      MINIO_ENDPOINT: minio:9000
+      MINIO_ENDPOINT: minio:8333
+      MINIO_ACCESS_KEY: ${AUTOSOC_MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${AUTOSOC_MINIO_ROOT_PASSWORD}
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
       POSTGRES_SERVER: postgres
@@ -132,6 +135,8 @@ services:
       redpanda:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -172,6 +177,7 @@ services:
       RULES_DIR: /app/rules
     volumes:
       - ../../workers/detection/src:/app/workers/detection/src
+      - ../../workers/detection/rules:/app/rules:ro
     command:
       - sh
       - -c
@@ -182,6 +188,8 @@ services:
       redpanda:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   correlation-worker:
@@ -204,6 +212,8 @@ services:
       redpanda:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   prediction-worker:
@@ -228,6 +238,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   agent-worker:
     build:
@@ -237,9 +249,15 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${AUTOSOC_POSTGRES_USER}:${AUTOSOC_POSTGRES_PASSWORD}@postgres:5432/${AUTOSOC_POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      INCIDENTS_TOPIC: security.incidents
       OPENSEARCH_HOST: opensearch
       OPENSEARCH_PORT: "9200"
-      OLLAMA_BASE_URL: http://ollama:11434
+      # Docker Desktop exposes the already-provisioned local Ollama instance
+      # through this host alias. Keep inference local; do not send telemetry
+      # to a third-party model endpoint.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_MODEL_NAME: llama3.2:3b
     volumes:
       - ../../workers/agents/src:/app/workers/agents/src
     command:
@@ -247,5 +265,9 @@ services:
       - -c
       - "pip install langchain-ollama && python -m autosoc_agents.main"
     depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
       opensearch:
         condition: service_healthy

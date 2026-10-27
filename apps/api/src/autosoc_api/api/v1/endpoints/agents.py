@@ -81,8 +81,9 @@ async def trigger_agent_worker(execution_id: str, incident_id: str, workflow_typ
             execution.steps_completed = 4
             execution.tool_calls_count = 8
             execution.duration_seconds = max(1, int((completion_time - now_utc).total_seconds()))
-            execution.model_provider = "LangGraph / Meta Ollama"
-            execution.model_name = "LangGraph-Llama3.1-MultiAgent"
+            from autosoc_api.services.llm import ollama_service
+            execution.model_provider = "LangGraph / local Ollama"
+            execution.model_name = ollama_service.model_name
             execution.model_version = "v3.1-graph"
             execution.prompt_version = "v1.4"
             execution.trace_id = f"trace-{uuid.uuid4().hex[:12]}"

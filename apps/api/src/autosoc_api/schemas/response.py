@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4, field_validator
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 
@@ -40,6 +40,14 @@ class ResponseApprovalAction(BaseModel):
     decision: str # "approved" or "rejected"
     reason: Optional[str] = None
 
+    @field_validator("decision")
+    @classmethod
+    def decision_must_be_terminal_review_outcome(cls, value: str) -> str:
+        value = value.lower()
+        if value not in {"approved", "rejected"}:
+            raise ValueError("decision must be approved or rejected")
+        return value
+
 class ResponseApprovalResponse(ResponseApprovalBase):
     model_config = ConfigDict(from_attributes=True)
     id: UUID4
@@ -55,7 +63,12 @@ class ResponseExecutionBase(BaseModel):
     mode: str # dry_run, simulation, analyst_approved_execution
 
 class ResponseExecutionCreate(ResponseExecutionBase):
-    pass
+    @field_validator("mode")
+    @classmethod
+    def mode_must_be_supported(cls, value: str) -> str:
+        if value not in {"dry_run", "simulation", "analyst_approved_execution"}:
+            raise ValueError("unsupported execution mode")
+        return value
 
 class ResponseExecutionResponse(ResponseExecutionBase):
     model_config = ConfigDict(from_attributes=True)

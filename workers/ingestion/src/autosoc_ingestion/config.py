@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     DEDUP_TTL_SECONDS: int = 3600
     RATE_LIMIT_PER_MINUTE: int = 600
+    RETRY_MAX_ATTEMPTS: int = 5
+    RETRY_BASE_DELAY_SECONDS: float = 1.0
+    RETRY_MAX_DELAY_SECONDS: float = 30.0
     
     # Logging
     LOG_LEVEL: str = "INFO"

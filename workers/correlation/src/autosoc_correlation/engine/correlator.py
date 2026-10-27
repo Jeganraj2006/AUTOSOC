@@ -17,15 +17,14 @@ async def correlate_alert(alert: DetectionResult):
     alert_dict = alert.model_dump(mode='json')
     rules = registry.get_all_rules()
     
+    emitted_incident_events = []
     for rule in rules:
         # Extract entities from alert
         entities_present = extract_entities(alert_dict)
         
         # Check if alert matches required entities for this rule
         for req_entity in rule.required_entities:
-            # E.g. "source_ip"
-            # We look for any entity where role matches or the key exists
-            entity_vals = [e['value'] for e in entities_present if e.get('role') == req_entity]
+            entity_vals = entity_values_for_requirement(entities_present, req_entity)
             
             for entity_val in entity_vals:
                 # Add to state tracking
@@ -48,7 +47,7 @@ async def correlate_alert(alert: DetectionResult):
                     
                     if active_incident_id:
                         # Update existing incident
-                        await IncidentManager.update_incident(
+                        incident_event = await IncidentManager.update_incident(
                             incident_id=active_incident_id,
                             alerts=correlated_alerts,
                             new_score=new_score,
@@ -57,7 +56,7 @@ async def correlate_alert(alert: DetectionResult):
                     else:
                         # Create new incident
                         new_incident_id = str(uuid.uuid4())
-                        await IncidentManager.create_incident(
+                        incident_event = await IncidentManager.create_incident(
                             incident_id=new_incident_id,
                             alerts=correlated_alerts,
                             entity_id=entity_val,
@@ -65,8 +64,33 @@ async def correlate_alert(alert: DetectionResult):
                             rule=rule
                         )
                         state_manager.set_active_incident(entity_id=entity_val, rule_id=rule.id, incident_id=new_incident_id)
+                    if incident_event is not None:
+                        emitted_incident_events.append(incident_event)
+
+    return emitted_incident_events
 
 def extract_entities(alert: dict) -> list:
     """Extract entities from alert structure"""
     entities = alert.get("entities", [])
     return entities
+
+
+def entity_values_for_requirement(entities: list, requirement: str) -> list[str]:
+    """Map correlation-rule entity aliases to DetectionResult EntityRef values."""
+    aliases = {
+        "source_ip": "source_ip",
+        "target_ip": "destination_ip",
+        "destination_ip": "destination_ip",
+        "user": "user",
+        "username": "user",
+        "host": "host",
+        "hostname": "host",
+        "process": "process",
+        "file": "file",
+    }
+    entity_type = aliases.get(requirement, requirement)
+    return sorted({
+        str(entity["value"])
+        for entity in entities
+        if entity.get("type") == entity_type and entity.get("value")
+    })

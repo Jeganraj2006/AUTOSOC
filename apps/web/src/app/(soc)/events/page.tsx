@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { useEvents, useUploadEvents, useDetectAnomalies } from "@/hooks/use-events";
+import {
+  AnomalyDetectionResult,
+  EventUploadResult,
+  useDetectAnomalies,
+  useEvents,
+  useUploadEvents,
+} from "@/hooks/use-events";
 import {
   Table,
   TableBody,
@@ -23,13 +29,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { AlertCircle, RefreshCw, XCircle, ArrowRight, ShieldAlert, Search, UploadCloud, FileType, CheckCircle2, Cpu, Zap, AlertTriangle } from "lucide-react";
+import { RefreshCw, XCircle, ArrowRight, ShieldAlert, Search, UploadCloud, FileType, CheckCircle2, Cpu, Zap, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
 
 function UploadCsvModal({ onUploadSuccess }: { onUploadSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<EventUploadResult | null>(null);
   const uploadMutation = useUploadEvents();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,17 +176,37 @@ function UploadCsvModal({ onUploadSuccess }: { onUploadSuccess: () => void }) {
 export default function EventsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [sourceIpText, setSourceIpText] = useState<string>("");
+  const [destinationIpText, setDestinationIpText] = useState<string>("");
+  const [sourceId, setSourceId] = useState<string>("");
+  const [searchText, setSearchText] = useState<string>("");
+  const [fileHash, setFileHash] = useState<string>("");
+  const [startTime, setStartTime] = useState<string>("");
+  const [endTime, setEndTime] = useState<string>("");
+  const [severity, setSeverity] = useState<string>("all");
+  const [sortField, setSortField] = useState<"event_time" | "received_at" | "event_category" | "source_id">("event_time");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [limitCount, setLimitCount] = useState<number>(50);
+  const [offset, setOffset] = useState<number>(0);
 
-  const [detectionSummary, setDetectionSummary] = useState<any>(null);
+  const [detectionSummary, setDetectionSummary] = useState<AnomalyDetectionResult | null>(null);
   const [anomalyMap, setAnomalyMap] = useState<Map<string, { is_anomaly: boolean; anomaly_score: number }>>(new Map());
 
   const detectMutation = useDetectAnomalies();
 
   const queryParams = {
     category: selectedCategory === "all" ? undefined : selectedCategory,
-    source_ip: sourceIpText.trim() === "" ? undefined : sourceIpText.trim(),
+    source_ip: sourceIpText.trim() || undefined,
+    destination_ip: destinationIpText.trim() || undefined,
+    source_id: sourceId.trim() || undefined,
+    q: searchText.trim() || undefined,
+    file_hash: fileHash.trim() || undefined,
+    start_time: startTime ? new Date(startTime).toISOString() : undefined,
+    end_time: endTime ? new Date(endTime).toISOString() : undefined,
+    severity: severity === "all" ? undefined : severity,
+    sort_field: sortField,
+    sort_direction: sortDirection,
     limit: limitCount,
+    offset,
   };
 
   const {
@@ -192,24 +220,33 @@ export default function EventsPage() {
   const handleClearFilters = () => {
     setSelectedCategory("all");
     setSourceIpText("");
+    setDestinationIpText("");
+    setSourceId("");
+    setSearchText("");
+    setFileHash("");
+    setStartTime("");
+    setEndTime("");
+    setSeverity("all");
+    setSortField("event_time");
+    setSortDirection("desc");
     setLimitCount(50);
+    setOffset(0);
   };
 
   const handleSearchTrigger = (e: React.FormEvent) => {
     e.preventDefault();
+    setOffset(0);
     refetch();
   };
 
   // 1. Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 font-mono">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Log Explorer</h2>
-            <p className="text-xs text-zinc-500">Search and investigate security telemetry</p>
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="Log explorer"
+          description="Investigate normalized OpenSearch telemetry with the filters supported by the event API."
+        />
 
         {/* Filters Skeletons */}
         <div className="flex flex-wrap gap-3 items-center">
@@ -219,7 +256,7 @@ export default function EventsPage() {
         </div>
 
         {/* Table Skeletons */}
-        <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+        <div className="soc-table-wrap">
           <div className="p-4 border-b border-zinc-900 flex gap-4">
             <Skeleton className="h-4 w-28 bg-zinc-900" />
             <Skeleton className="h-4 w-40 bg-zinc-900" />
@@ -246,19 +283,17 @@ export default function EventsPage() {
   // 2. Error State
   if (isError) {
     return (
-      <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-red-900/40 bg-red-950/10 p-6 text-center font-mono">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-500 animate-pulse" />
-        <h3 className="text-lg font-bold text-red-400">Unable to load security events</h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-2 mb-6">
-          There was an error communicating with the OpenSearch upstream log cluster.
-        </p>
-        <Button
-          onClick={() => refetch()}
-          className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/30 text-red-400 text-xs px-4"
-        >
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-          Retry Connection
-        </Button>
+      <div className="space-y-6">
+        <PageHeader
+          title="Log explorer"
+          description="Investigate normalized OpenSearch telemetry with the filters supported by the event API."
+        />
+        <OperationalState
+          kind="error"
+          title="Security events are unavailable"
+          description="The event service did not return a usable response. Verify the authenticated API connection, then retry."
+          action={<RetryButton onClick={() => refetch()} disabled={isFetching} />}
+        />
       </div>
     );
   }
@@ -269,7 +304,7 @@ export default function EventsPage() {
     detectMutation.mutate(limitCount, {
       onSuccess: (res) => {
         const map = new Map<string, { is_anomaly: boolean; anomaly_score: number }>();
-        res.predictions?.forEach((p: any) => {
+        res.predictions?.forEach((p) => {
           map.set(p.event_id, { is_anomaly: p.is_anomaly, anomaly_score: p.anomaly_score });
         });
         setAnomalyMap(map);
@@ -279,17 +314,12 @@ export default function EventsPage() {
   };
 
   return (
-    <div className="space-y-6 font-mono">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Log Explorer</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Search and investigate security telemetry
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="Log explorer"
+        description="Investigate normalized OpenSearch v2 telemetry. Optional fields remain visible only when the source provided them."
+        actions={<div className="flex flex-wrap items-center gap-2">
           <Button
             onClick={runDetectAnomalies}
             disabled={detectMutation.isPending}
@@ -313,11 +343,11 @@ export default function EventsPage() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin text-indigo-400" : ""}`} />
             Refresh
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Filter controls row */}
-      <form onSubmit={handleSearchTrigger} className="flex flex-wrap gap-4 items-end bg-zinc-950/40 p-4 border border-zinc-900 rounded-lg">
+      <form onSubmit={handleSearchTrigger} className="soc-surface flex flex-wrap items-end gap-4 rounded-xl p-4">
         {/* Category Filter */}
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] text-zinc-500 uppercase font-semibold">Category:</span>
@@ -346,6 +376,40 @@ export default function EventsPage() {
           />
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="event-search">Search</label>
+          <Input id="event-search" placeholder="Message, host, user, process" value={searchText} onChange={(event) => setSearchText(event.target.value)} className="w-[220px] h-8 bg-zinc-950 border-zinc-900 text-xs" />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="destination-ip">Destination IP</label>
+          <Input id="destination-ip" placeholder="Exact destination IP" value={destinationIpText} onChange={(event) => setDestinationIpText(event.target.value)} className="w-[180px] h-8 bg-zinc-950 border-zinc-900 text-xs font-mono" />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="event-source-id">Source ID</label>
+          <Input id="event-source-id" placeholder="Collector identifier" value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="w-[170px] h-8 bg-zinc-950 border-zinc-900 text-xs" />
+        </div>
+
+        <div className="flex flex-col gap-1.5"><label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="event-file-hash">File hash</label><Input id="event-file-hash" placeholder="Indexed SHA-256/SHA-1/MD5" value={fileHash} onChange={(event) => setFileHash(event.target.value)} className="w-[220px] h-8 bg-zinc-950 border-zinc-900 font-mono text-xs" /></div>
+        <div className="flex flex-col gap-1.5"><label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="event-start-time">From</label><Input id="event-start-time" type="datetime-local" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="w-[190px] h-8 bg-zinc-950 border-zinc-900 text-xs" /></div>
+        <div className="flex flex-col gap-1.5"><label className="text-[10px] text-zinc-500 uppercase font-semibold" htmlFor="event-end-time">To</label><Input id="event-end-time" type="datetime-local" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="w-[190px] h-8 bg-zinc-950 border-zinc-900 text-xs" /></div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] text-zinc-500 uppercase font-semibold">Severity</span>
+          <Select value={severity} onValueChange={(value) => value && setSeverity(value)}><SelectTrigger className="w-[130px] h-8 bg-zinc-950 border-zinc-900 text-xs"><SelectValue /></SelectTrigger><SelectContent className="bg-zinc-950 border-zinc-900 text-xs"><SelectItem value="all">All severity</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] text-zinc-500 uppercase font-semibold">Sort</span>
+          <Select value={sortField} onValueChange={(value) => setSortField((value ?? "event_time") as typeof sortField)}><SelectTrigger className="w-[150px] h-8 bg-zinc-950 border-zinc-900 text-xs"><SelectValue /></SelectTrigger><SelectContent className="bg-zinc-950 border-zinc-900 text-xs"><SelectItem value="event_time">Event time</SelectItem><SelectItem value="received_at">Received time</SelectItem><SelectItem value="event_category">Category</SelectItem><SelectItem value="source_id">Source</SelectItem></SelectContent></Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] text-zinc-500 uppercase font-semibold">Direction</span>
+          <Select value={sortDirection} onValueChange={(value) => setSortDirection((value ?? "desc") as typeof sortDirection)}><SelectTrigger className="w-[110px] h-8 bg-zinc-950 border-zinc-900 text-xs"><SelectValue /></SelectTrigger><SelectContent className="bg-zinc-950 border-zinc-900 text-xs"><SelectItem value="desc">Newest</SelectItem><SelectItem value="asc">Oldest</SelectItem></SelectContent></Select>
+        </div>
+
         {/* Limit Selector */}
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] text-zinc-500 uppercase font-semibold">Limit Rows:</span>
@@ -356,7 +420,7 @@ export default function EventsPage() {
             <SelectContent className="bg-zinc-950 border-zinc-900 text-xs">
               <SelectItem value="50">50 rows</SelectItem>
               <SelectItem value="100">100 rows</SelectItem>
-              <SelectItem value="500">500 rows</SelectItem>
+              <SelectItem value="250">250 rows</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -371,7 +435,7 @@ export default function EventsPage() {
             Query
           </Button>
 
-          {(selectedCategory !== "all" || sourceIpText !== "" || limitCount !== 50) && (
+          {(selectedCategory !== "all" || sourceIpText !== "" || destinationIpText !== "" || sourceId !== "" || searchText !== "" || fileHash !== "" || startTime !== "" || endTime !== "" || severity !== "all" || sortField !== "event_time" || sortDirection !== "desc" || limitCount !== 50) && (
             <Button
               type="button"
               onClick={handleClearFilters}
@@ -399,7 +463,11 @@ export default function EventsPage() {
       )}
 
       {/* Events log queue table */}
-      <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+      <div className="soc-table-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 text-sm">
+          <p className="font-medium text-foreground">{data?.total ?? 0} matching events</p>
+          <p className="text-xs text-muted-foreground">Server result limit: {limitCount}</p>
+        </div>
         <Table>
           <TableHeader className="bg-zinc-950/60 border-b border-zinc-900">
             <TableRow className="hover:bg-transparent border-zinc-900">
@@ -500,6 +568,10 @@ export default function EventsPage() {
             )}
           </TableBody>
         </Table>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <Button type="button" variant="outline" size="sm" disabled={offset === 0 || isFetching} onClick={() => setOffset((value) => Math.max(0, value - limitCount))}><ChevronLeft className="mr-1 h-4 w-4" />Previous</Button>
+          <Button type="button" variant="outline" size="sm" disabled={!data || offset + limitCount >= data.total || isFetching} onClick={() => setOffset((value) => value + limitCount)}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button>
+        </div>
       </div>
     </div>
   );

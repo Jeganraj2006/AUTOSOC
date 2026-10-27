@@ -1,80 +1,15 @@
 "use client";
 
-import { useMe } from "@/hooks/use-me";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { User, LogOut, Shield } from "lucide-react";
+import { LogOut, Shield, User } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useMe } from "@/hooks/use-me";
+import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
+import { OperationalState } from "@/components/ui/operational-state";
 
 export default function ProfilePage() {
-  const { data: user, isLoading } = useMe();
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48 bg-zinc-900" />
-        <Skeleton className="h-[400px] w-full max-w-2xl bg-zinc-900" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">User Profile</h1>
-
-      <Card className="bg-zinc-900 border-zinc-800 max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-zinc-800 ring-4 ring-zinc-950">
-              <User className="h-8 w-8 text-zinc-400" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl">{user?.username}</CardTitle>
-              <CardDescription className="text-zinc-400">{user?.email}</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-sm font-medium text-zinc-500">Authentication Source</h3>
-            <p className="text-sm text-zinc-300">Keycloak OIDC (AutoSOC Identity)</p>
-          </div>
-          
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-zinc-500">Assigned Roles</h3>
-            <div className="flex flex-wrap gap-2">
-              {user?.roles.map((role) => (
-                <span
-                  key={role}
-                  className="inline-flex items-center rounded-full border border-blue-900 bg-blue-950/30 px-2.5 py-0.5 text-xs font-semibold text-blue-400"
-                >
-                  <Shield className="mr-1 h-3 w-3" />
-                  {role}
-                </span>
-              ))}
-              {user?.is_superuser && (
-                <span className="inline-flex items-center rounded-full border border-purple-900 bg-purple-950/30 px-2.5 py-0.5 text-xs font-semibold text-purple-400">
-                  <Shield className="mr-1 h-3 w-3" />
-                  superuser
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-zinc-800">
-            <Button
-              variant="destructive"
-              className="bg-red-950/50 text-red-500 hover:bg-red-900 hover:text-red-100 border border-red-900/50 cursor-pointer"
-              onClick={async () => {
-                await signOut({ callbackUrl: "/login" });
-              }}
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Sign Out
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const { data: user, isLoading, isError, refetch } = useMe();
+  if (isLoading) return <div className="space-y-6"><PageHeader title="Account" description="Loading authenticated session information." /><div className="soc-surface h-72 animate-pulse rounded-xl" /></div>;
+  if (isError || !user) return <div className="space-y-6"><PageHeader title="Account" description="View the current authenticated Keycloak session and application roles." /><OperationalState kind="error" title="Account information is unavailable" description="The current session could not be loaded. Refresh or sign in again if the session expired." action={<Button variant="outline" onClick={() => refetch()}>Retry</Button>} /></div>;
+  return <div className="space-y-6"><PageHeader title="Account" description="Authenticated session details and application roles supplied by AutoSOC Identity." /><section className="soc-surface max-w-3xl rounded-xl p-6"><div className="flex items-center gap-4"><div className="grid size-14 place-items-center rounded-full bg-muted text-muted-foreground"><User className="size-7" /></div><div><h2 className="text-lg font-semibold text-foreground">{user.username}</h2><p className="mt-1 text-sm text-muted-foreground">{user.email || "Email not supplied"}</p></div></div><dl className="mt-7 grid gap-5 border-t border-border pt-5 sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">Authentication provider</dt><dd className="mt-1 text-sm text-foreground">Keycloak OIDC (AutoSOC Identity)</dd></div><div><dt className="text-xs text-muted-foreground">Session context</dt><dd className="mt-1 text-sm text-foreground">Backend-authenticated application session</dd></div><div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Application roles</dt><dd className="mt-2 flex flex-wrap gap-2">{user.roles.length ? user.roles.map((role) => <span key={role} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground"><Shield className="size-3" />{role}</span>) : <span className="text-sm text-muted-foreground">No roles reported</span>}{user.is_superuser ? <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground"><Shield className="size-3" />superuser</span> : null}</dd></div></dl><div className="mt-7 border-t border-border pt-5"><Button variant="outline" onClick={() => void signOut({ callbackUrl: "/login" })}><LogOut className="mr-1.5 size-4" />Sign out securely</Button><p className="mt-2 text-xs text-muted-foreground">Password and account recovery are managed by Keycloak; AutoSOC does not expose local password controls.</p></div></section></div>;
 }

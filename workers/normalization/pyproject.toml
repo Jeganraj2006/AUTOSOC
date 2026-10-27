@@ -9,8 +9,10 @@ dependencies = [
     "pydantic-settings",
     "uvicorn",
     "aiokafka",
+    "python-snappy",
     "opensearch-py[async]",
     "httpx",
+    "redis>=5.0.6",
     "autosoc-schemas",
     "autosoc-api"
 ]
@@ -24,4 +26,4 @@ packages = ["src/autosoc_normalization"]
 
 [tool.uv.sources]
 autosoc-api = { path = "../../apps/api" }
-autosoc-schemas = { path = "../../packages/event-schemas" }
+autosoc-schemas = { path = "../../packages/event-schemas", editable = true }

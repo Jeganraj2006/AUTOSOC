@@ -24,6 +24,9 @@ import {
   Edit,
 } from "lucide-react";
 import { DataSourceDialog } from "@/components/soc/data-source-dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
+import { canManageDataSources } from "@/lib/administration";
 
 export default function DataSourcesPage() {
   const { data, isLoading, isError, refetch, isFetching } = useDataSources();
@@ -32,10 +35,7 @@ export default function DataSourcesPage() {
   const [selectedSource, setSelectedSource] = useState<DataSource | null>(null);
 
   // Authorize managers/administrators
-  const isAuthorizedToManage =
-    currentUser?.is_superuser ||
-    currentUser?.roles.includes("admin") ||
-    currentUser?.roles.includes("administrator");
+  const isAuthorizedToManage = canManageDataSources(currentUser);
 
   const handleAddSource = () => {
     setSelectedSource(null);
@@ -50,13 +50,8 @@ export default function DataSourcesPage() {
   // 1. Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 font-mono">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Data Sources</h2>
-            <p className="text-xs text-zinc-500">Monitor and manage log ingestion streams</p>
-          </div>
-        </div>
+      <div className="space-y-6">
+        <PageHeader title="Data sources" description="Loading persisted ingestion source configuration." />
 
         {/* Table Skeleton */}
         <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
@@ -84,19 +79,9 @@ export default function DataSourcesPage() {
   // 2. Error State
   if (isError) {
     return (
-      <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-red-900/40 bg-red-950/10 p-6 text-center font-mono">
-        <AlertCircle className="mb-4 h-12 w-12 text-red-500 animate-pulse" />
-        <h3 className="text-lg font-bold text-red-400">Failed to load data sources</h3>
-        <p className="text-xs text-zinc-500 max-w-sm mt-2 mb-6">
-          Could not communicate with the backend security sources manager.
-        </p>
-        <Button
-          onClick={() => refetch()}
-          className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/30 text-red-400 text-xs px-4"
-        >
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-          Retry Connection
-        </Button>
+      <div className="space-y-6">
+        <PageHeader title="Data sources" description="Manage persisted ingestion source configuration without exposing credential values." />
+        <OperationalState kind="error" title="Data sources are unavailable" description="The data-source API did not return a usable response. Retry the authenticated request." action={<RetryButton onClick={() => refetch()} disabled={isFetching} />} />
       </div>
     );
   }
@@ -104,17 +89,11 @@ export default function DataSourcesPage() {
   const items = data?.items || [];
 
   return (
-    <div className="space-y-6 font-mono">
-      {/* Page Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-zinc-900 pb-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Data Sources</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Monitor and manage log ingestion streams
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
+    <div className="space-y-6">
+      <PageHeader
+        title="Data sources"
+        description="Monitor persisted source configuration and ingestion status. Secret references are never displayed."
+        actions={<div className="flex items-center gap-3">
           <Button
             onClick={() => refetch()}
             disabled={isFetching}
@@ -133,11 +112,11 @@ export default function DataSourcesPage() {
               <Plus className="mr-1.5 h-4 w-4" /> Add Source
             </Button>
           )}
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Observability Table */}
-      <div className="border border-zinc-900 rounded-lg overflow-hidden bg-zinc-950/20">
+      <div className="soc-table-wrap">
         <Table>
           <TableHeader className="bg-zinc-950/60 border-b border-zinc-900">
             <TableRow className="hover:bg-transparent border-zinc-900">

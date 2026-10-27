@@ -3,12 +3,14 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from autosoc_api.db.session import get_db_session
 from autosoc_api.auth.dependencies import require_permission
 from autosoc_api.auth.permissions import Permissions
 from autosoc_api.auth.models import Principal
 from autosoc_api.db.models.prediction import Prediction
+from autosoc_api.services.prediction_idempotency import prediction_input_fingerprint
 from autosoc_api.db.models.incident import Incident
 from autosoc_api.schemas.prediction import PredictionResult, TechniquePrediction, PredictionTarget
 
@@ -32,15 +34,39 @@ async def compute_and_save_prediction(incident: Incident, db: AsyncSession) -> P
     risk_score = pred_data["escalation_risk_score"]
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    model_name = "Markov-Chain-ATT&CK-Predictor"
+    model_version = "v1.2.0"
+    attack_version = "v14.1"
+    fingerprint = prediction_input_fingerprint(
+        incident_id=incident.id,
+        model_name=model_name,
+        model_version=model_version,
+        attack_version=attack_version,
+        observed_techniques=observed,
+    )
+    existing = await db.execute(
+        select(Prediction).where(
+            Prediction.incident_id == incident.id,
+            Prediction.model_name == model_name,
+            Prediction.model_version == model_version,
+            Prediction.attack_version == attack_version,
+            Prediction.input_fingerprint == fingerprint,
+        )
+    )
+    existing_prediction = existing.scalars().first()
+    if existing_prediction:
+        return existing_prediction
+
     prediction = Prediction(
         id=uuid.uuid4(),
         incident_id=incident.id,
         generated_at=now,
         valid_until=now + timedelta(hours=24),
         is_stale=False,
-        model_name="Markov-Chain-ATT&CK-Predictor",
-        model_version="v1.2.0",
-        attack_version="v14.1",
+        model_name=model_name,
+        model_version=model_version,
+        attack_version=attack_version,
+        input_fingerprint=fingerprint,
         status="completed",
         observed_techniques=observed,
         predicted_next_techniques=predicted_next,
@@ -52,7 +78,21 @@ async def compute_and_save_prediction(incident: Incident, db: AsyncSession) -> P
     )
     
     db.add(prediction)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent request persisted the same logical input first.
+        await db.rollback()
+        existing = await db.execute(
+            select(Prediction).where(
+                Prediction.incident_id == incident.id,
+                Prediction.model_name == model_name,
+                Prediction.model_version == model_version,
+                Prediction.attack_version == attack_version,
+                Prediction.input_fingerprint == fingerprint,
+            )
+        )
+        return existing.scalars().one()
     await db.refresh(prediction)
     return prediction
 

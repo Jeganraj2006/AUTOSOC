@@ -16,6 +16,19 @@ dependencies = [
     "prometheus-client"
 ]
 
+[project.optional-dependencies]
+# Development-only test tooling.  These extras are intentionally not part of
+# the worker's production dependency set or container image.
+dev = [
+    "pytest>=8.2.2",
+    "pytest-asyncio>=0.23.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -25,5 +38,4 @@ packages = ["src/autosoc_ingestion"]
 
 [tool.uv.sources]
 autosoc-api = { path = "../../apps/api" }
-autosoc-schemas = { path = "../../packages/event-schemas" }
-
+autosoc-schemas = { path = "../../packages/event-schemas", editable = true }

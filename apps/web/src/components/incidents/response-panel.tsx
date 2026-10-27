@@ -4,8 +4,16 @@ import React, { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ShieldAlert, ShieldCheck, Zap, Lock, RefreshCw, CheckCircle2, Play, AlertTriangle } from "lucide-react";
-import { useResponseRecommendations, useCreateResponseRecommendation } from "@/hooks/use-responses";
+import { ShieldCheck, Zap, Lock, RefreshCw, CheckCircle2, Play, Check, X } from "lucide-react";
+import {
+  useCreateResponseRecommendation,
+  useDecideResponseApproval,
+  useDryRunResponse,
+  useRequestResponseApproval,
+  useResponseRecommendations,
+} from "@/hooks/use-responses";
+import { useMe } from "@/hooks/use-me";
+import { canExecuteApprovedDryRun } from "@/lib/monitoring";
 
 interface ResponsePanelProps {
   incidentId: string;
@@ -42,8 +50,23 @@ const PLAYBOOKS = [
 ];
 
 export function ResponsePanel({ incidentId }: ResponsePanelProps) {
-  const { data: recommendations, isLoading, isError, refetch, isFetching } = useResponseRecommendations(incidentId);
+  const { data: recommendations, isLoading, refetch, isFetching } = useResponseRecommendations(incidentId);
+  const { data: currentUser } = useMe();
   const createMutation = useCreateResponseRecommendation();
+  const requestApprovalMutation = useRequestResponseApproval();
+  const decideApprovalMutation = useDecideResponseApproval();
+  const dryRunMutation = useDryRunResponse();
+  const [lastExecution, setLastExecution] = useState<{ status: string; verificationStatus?: string } | null>(null);
+  const roles = new Set(currentUser?.roles ?? []);
+  const canRecommend = Boolean(currentUser?.is_superuser || roles.has("administrator") || roles.has("soc_analyst"));
+  const canApprove = Boolean(currentUser?.is_superuser || roles.has("administrator") || roles.has("security_manager"));
+  const canExecute = canApprove;
+  const responseError = [
+    createMutation.error,
+    requestApprovalMutation.error,
+    decideApprovalMutation.error,
+    dryRunMutation.error,
+  ].find((error): error is Error => error instanceof Error);
 
   const handleTriggerPlaybook = (pb: (typeof PLAYBOOKS)[0]) => {
     createMutation.mutate({
@@ -52,7 +75,22 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
       playbook_id: pb.id,
       target_reference: pb.target,
       rationale: pb.rationale,
-      risk_assessment: pb.risk,
+      impact: pb.risk.startsWith("LOW") ? "low" : "medium",
+      reversibility: "reversible",
+    });
+  };
+
+  const confirmDecision = (recommendationId: string, decision: "approved" | "rejected") => {
+    const verb = decision === "approved" ? "approve" : "reject";
+    if (window.confirm(`Confirm ${verb} for this response proposal? This decision will be recorded.`)) {
+      decideApprovalMutation.mutate({ recommendationId, decision });
+    }
+  };
+
+  const executeDryRun = (recommendationId: string) => {
+    if (!window.confirm("Run a validated dry run? No external containment action will be performed.")) return;
+    dryRunMutation.mutate(recommendationId, {
+      onSuccess: (execution) => setLastExecution({ status: execution.status, verificationStatus: execution.verification_status }),
     });
   };
 
@@ -62,10 +100,10 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
         <div>
           <h3 className="text-lg font-medium text-zinc-100 flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-emerald-400" />
-            Response Actions & Containment Subsystem
+            Response workflow
           </h3>
           <p className="text-xs text-zinc-500 mt-1">
-            Execute automated containment playbooks and manage incident mitigation approvals.
+            Create response proposals, request human review, and run validated dry-run simulations.
           </p>
         </div>
 
@@ -83,18 +121,33 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
       <Alert className="bg-emerald-950/20 border-emerald-900/40 text-emerald-400">
         <ShieldCheck className="h-4 w-4 text-emerald-400" />
         <AlertTitle className="text-emerald-300 font-bold uppercase tracking-wider text-xs">
-          Containment Subsystem Active & Connected
+          Human approval required
         </AlertTitle>
         <AlertDescription className="text-[11px] leading-relaxed mt-1 text-emerald-400/80">
-          Response actions are enabled. Containment recommendations can be proposed, approved, and executed in analyst-approved simulation mode.
+          Response proposals are subject to role checks and administrative approval. The available execution mode is a validated dry run; no external containment is initiated from this panel.
         </AlertDescription>
       </Alert>
+
+      {responseError && (
+        <Alert className="border-red-900/50 bg-red-950/20 text-red-300">
+          <AlertTitle className="text-xs font-bold">Response workflow request failed</AlertTitle>
+          <AlertDescription className="mt-1 text-[11px]">{responseError.message}</AlertDescription>
+        </Alert>
+      )}
+
+      {lastExecution && (
+        <Alert className="border-emerald-700/40 bg-emerald-950/20 text-emerald-200" aria-live="polite">
+          <ShieldCheck className="h-4 w-4 text-emerald-400" />
+          <AlertTitle>Validated only — no external action performed</AlertTitle>
+          <AlertDescription className="text-[11px]">Execution status: {lastExecution.status}{lastExecution.verificationStatus ? ` · verification: ${lastExecution.verificationStatus}` : ""}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Available Containment Playbooks */}
       <div className="space-y-3">
         <div className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
           <Zap className="h-4 w-4 text-amber-400" />
-          Recommended Mitigation Playbooks
+          Response proposal templates
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -120,7 +173,8 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
                 </div>
                 <Button
                   onClick={() => handleTriggerPlaybook(pb)}
-                  disabled={createMutation.isPending}
+                  disabled={!canRecommend || createMutation.isPending}
+                  title={canRecommend ? undefined : "Your role cannot propose response actions."}
                   className="w-full h-8 bg-emerald-950/40 border border-emerald-900/60 hover:bg-emerald-900/40 text-emerald-400 text-xs font-mono"
                 >
                   <Play className="h-3.5 w-3.5 mr-1.5" />
@@ -136,14 +190,14 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
       <div className="space-y-3 pt-4 border-t border-zinc-900">
         <div className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
           <Lock className="h-4 w-4 text-indigo-400" />
-          Active Incident Containment Log ({recommendations?.length || 0})
+          Incident response record ({recommendations?.length || 0})
         </div>
 
         {isLoading ? (
           <div className="py-8 text-center text-zinc-600 text-xs">Loading response logs...</div>
         ) : !recommendations || recommendations.length === 0 ? (
           <div className="border border-dashed border-zinc-900 rounded p-6 text-center text-zinc-650 text-xs">
-            No containment recommendations proposed for this incident yet. Click "Propose Containment" above to trigger a playbook.
+            No containment recommendations proposed for this incident yet. Click &quot;Propose Containment&quot; above to trigger a playbook.
           </div>
         ) : (
           <div className="space-y-2">
@@ -165,6 +219,50 @@ export function ResponsePanel({ incidentId }: ResponsePanelProps) {
                     {rec.status}
                   </span>
                   <span className="text-[10px] text-zinc-650">By: {rec.created_by || "analyst"}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {rec.status === "proposed" && canRecommend && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => requestApprovalMutation.mutate(rec.id)}
+                      disabled={requestApprovalMutation.isPending}
+                      className="h-7 border-zinc-800 text-[10px]"
+                    >
+                      Request Review
+                    </Button>
+                  )}
+                  {rec.status === "pending_review" && canApprove && rec.created_by !== currentUser?.username && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => confirmDecision(rec.id, "approved")}
+                        disabled={decideApprovalMutation.isPending}
+                        className="h-7 bg-emerald-950/40 text-emerald-400 text-[10px]"
+                      >
+                        <Check className="mr-1 h-3 w-3" /> Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => confirmDecision(rec.id, "rejected")}
+                        disabled={decideApprovalMutation.isPending}
+                        className="h-7 border-red-900/50 text-red-400 text-[10px]"
+                      >
+                        <X className="mr-1 h-3 w-3" /> Reject
+                      </Button>
+                    </>
+                  )}
+                  {canExecuteApprovedDryRun(rec.status, canExecute) && (
+                    <Button
+                      size="sm"
+                      onClick={() => executeDryRun(rec.id)}
+                      disabled={dryRunMutation.isPending}
+                      className="h-7 bg-indigo-950/40 text-indigo-300 text-[10px]"
+                    >
+                      Validated Dry Run
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}

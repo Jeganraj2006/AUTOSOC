@@ -1,172 +1,211 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+}
+
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card-bg: #ffffff;
-  --card-border: #e2e8f0;
-  --text-muted: #64748b;
-  --sidebar-bg: #ffffff;
-  --sidebar-border: #e2e8f0;
+  color-scheme: light;
+  --background: #f4f7fb;
+  --foreground: #142033;
+  --card: #ffffff;
+  --card-foreground: #142033;
+  --popover: #ffffff;
+  --popover-foreground: #142033;
+  --primary: #087ea4;
+  --primary-foreground: #f7fcff;
+  --secondary: #e8eef5;
+  --secondary-foreground: #21324a;
+  --muted: #eef3f8;
+  --muted-foreground: #5e708a;
+  --accent: #dff4fb;
+  --accent-foreground: #075a76;
+  --border: #d7e0ea;
+  --input: #e9f0f6;
+  --ring: #16a6cf;
+  --destructive: #c53a4a;
+  --panel-subtle: #f8fbfe;
+  --sidebar: #102039;
+  --sidebar-foreground: #d8e4f1;
+  --sidebar-muted: #94a6bd;
+  --sidebar-active: #173453;
+  --grid-line: rgba(22, 166, 207, 0.09);
 }
 
 .dark {
-  --background: #020617;
-  --foreground: #f8fafc;
-  --card-bg: #0f172a;
-  --card-border: #1e293b;
-  --text-muted: #94a3b8;
-  --sidebar-bg: #020617;
-  --sidebar-border: #0f172a;
+  color-scheme: dark;
+  --background: #08111f;
+  --foreground: #edf5ff;
+  --card: #0e1a2b;
+  --card-foreground: #edf5ff;
+  --popover: #101e31;
+  --popover-foreground: #edf5ff;
+  --primary: #25b8e6;
+  --primary-foreground: #06121f;
+  --secondary: #18283d;
+  --secondary-foreground: #dbe9f5;
+  --muted: #142238;
+  --muted-foreground: #93a8c1;
+  --accent: #12324a;
+  --accent-foreground: #bcefff;
+  --border: #243750;
+  --input: #18283d;
+  --ring: #44c4ea;
+  --destructive: #ff7484;
+  --panel-subtle: #0b1626;
+  --sidebar: #07111e;
+  --sidebar-foreground: #e4eef8;
+  --sidebar-muted: #91a4bb;
+  --sidebar-active: #102e47;
+  --grid-line: rgba(68, 196, 234, 0.08);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  min-width: 320px;
+  background: var(--background);
+  text-rendering: optimizeLegibility;
 }
 
 body {
+  min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), Arial, sans-serif;
-  min-height: 100vh;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
-/* Glassmorphism & Micro-animations */
-.glass-card {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(226, 232, 240, 0.8) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+::selection {
+  background: color-mix(in srgb, var(--primary) 34%, transparent);
+  color: var(--foreground);
 }
 
-.dark .glass-card {
-  background: rgba(15, 23, 42, 0.6) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2) !important;
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
 }
 
-.glass-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 0 20px rgba(99, 102, 241, 0.1) !important;
+* {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 55%, transparent) transparent;
+  scrollbar-width: thin;
 }
 
-/* ------------------------------------------------------------- */
-/* AUTOMATIC LIGHT THEME OVERRIDES (when NOT in .dark mode)     */
-/* ------------------------------------------------------------- */
-html:not(.dark) {
-  background-color: #f8fafc !important;
-  color: #0f172a !important;
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-html:not(.dark) body {
-  background-color: #f8fafc !important;
-  color: #0f172a !important;
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 52%, transparent);
+  background-clip: padding-box;
 }
 
-html:not(.dark) .bg-zinc-950,
-html:not(.dark) .bg-zinc-900,
-html:not(.dark) .bg-black,
-html:not(.dark) \.bg-\[\#0a0e17\],
-html:not(.dark) \.bg-\[\#0b0f19\],
-html:not(.dark) \.bg-\[\#080b12\],
-html:not(.dark) \.bg-\[\#0f172a\] {
-  background-color: #ffffff !important;
+.soc-canvas {
+  background-color: var(--background);
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
-html:not(.dark) \.bg-zinc-950\/40,
-html:not(.dark) \.bg-zinc-950\/50,
-html:not(.dark) \.bg-zinc-950\/60,
-html:not(.dark) \.bg-zinc-950\/20,
-html:not(.dark) \.bg-zinc-900\/40,
-html:not(.dark) \.bg-zinc-900\/50,
-html:not(.dark) \.bg-zinc-900\/20,
-html:not(.dark) \.bg-zinc-900\/10,
-html:not(.dark) \.bg-zinc-900\/30,
-html:not(.dark) \.bg-zinc-950\/80 {
-  background-color: #f1f5f9 !important;
+.soc-surface {
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 12px 28px rgba(1, 9, 20, 0.12);
 }
 
-html:not(.dark) .border-zinc-900,
-html:not(.dark) .border-zinc-800,
-html:not(.dark) .border-zinc-700,
-html:not(.dark) \.border-zinc-900\/50,
-html:not(.dark) \.border-zinc-900\/40,
-html:not(.dark) \.border-zinc-800\/50,
-html:not(.dark) .divide-zinc-900 > * + * {
-  border-color: #cbd5e1 !important;
+.soc-page-header {
+  display: flex;
+  min-height: 5.5rem;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.25rem;
 }
 
-html:not(.dark) .text-zinc-100,
-html:not(.dark) .text-zinc-200,
-html:not(.dark) .text-zinc-300,
-html:not(.dark) .text-white {
-  color: #0f172a !important;
+.soc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  background: var(--card);
+  box-shadow: 0 12px 28px rgba(1, 9, 20, 0.08);
 }
 
-html:not(.dark) .text-zinc-400 {
-  color: #334155 !important;
+/* Transitional compatibility for established route-level zinc utilities.
+   New and modernized surfaces use semantic tokens directly; this keeps every
+   existing route legible when the user selects the supported light theme. */
+html:not(.dark) [class*="bg-zinc-950"],
+html:not(.dark) [class*="bg-zinc-900"],
+html:not(.dark) [class*="bg-black"] {
+  background-color: var(--card);
 }
 
-html:not(.dark) .text-zinc-500,
-html:not(.dark) .text-zinc-550,
-html:not(.dark) .text-zinc-600,
-html:not(.dark) .text-zinc-650 {
-  color: #64748b !important;
+html:not(.dark) [class*="border-zinc-900"],
+html:not(.dark) [class*="border-zinc-800"],
+html:not(.dark) [class*="border-zinc-700"],
+html:not(.dark) [class*="divide-zinc-900"] > * + * {
+  border-color: var(--border);
 }
 
-html:not(.dark) \.hover\:bg-zinc-900:hover,
-html:not(.dark) \.hover\:bg-zinc-900\/10:hover,
-html:not(.dark) \.hover\:bg-zinc-900\/40:hover,
-html:not(.dark) \.hover\:bg-zinc-800:hover {
-  background-color: #e2e8f0 !important;
+html:not(.dark) [class*="text-zinc-100"],
+html:not(.dark) [class*="text-zinc-200"],
+html:not(.dark) [class*="text-zinc-300"],
+html:not(.dark) [class*="text-white"] {
+  color: var(--foreground);
 }
 
-html:not(.dark) input,
-html:not(.dark) textarea,
-html:not(.dark) select {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important;
+html:not(.dark) [class*="text-zinc-400"],
+html:not(.dark) [class*="text-zinc-500"],
+html:not(.dark) [class*="text-zinc-600"] {
+  color: var(--muted-foreground);
 }
 
-html:not(.dark) table {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
+.soc-empty-state,
+.soc-error-state {
+  display: grid;
+  min-height: 18rem;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  padding: 2rem;
+  text-align: center;
 }
 
-html:not(.dark) tr:hover {
-  background-color: #f1f5f9 !important;
-}
-
-/* ------------------------------------------------------------- */
-
-.animate-fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
-}
-
-.animate-slide-up {
-  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(15px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.delay-100 { animation-delay: 100ms; }
-.delay-200 { animation-delay: 200ms; }
-.delay-300 { animation-delay: 300ms; }
-
-.pulse-glow {
-  animation: pulseGlow 2s infinite;
-}
-
-@keyframes pulseGlow {
-  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

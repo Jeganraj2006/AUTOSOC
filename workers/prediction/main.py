@@ -1,9 +1,12 @@
 import asyncio
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -14,6 +17,8 @@ from config import settings
 from predictor import ProgressionService
 
 from autosoc_api.db.models.prediction import Prediction
+from autosoc_api.services.prediction_idempotency import prediction_input_fingerprint
+from autosoc_api.services.worker_reliability import RedisRetryState
 from autosoc_api.db.models.attack import (
     IncidentAttackMapping,
     AttackTechnique,
@@ -49,7 +54,7 @@ async def process_message(
 
         if not incident_id:
             logger.warning("Kafka message missing incident_id")
-            return
+            return False
 
         logger.info(
             f"Processing incident: {incident_id}"
@@ -93,7 +98,7 @@ async def process_message(
             logger.warning(
                 f"No attack mappings found for incident {incident_id}"
             )
-            return
+            return True
 
         # ---------------------------------------------------------
         # 3. Convert database mappings into predictor input
@@ -153,7 +158,7 @@ async def process_message(
                 f"No predictions generated for incident "
                 f"{incident_id}"
             )
-            return
+            return True
 
         # ---------------------------------------------------------
         # 5. Calculate escalation risk
@@ -178,11 +183,22 @@ async def process_message(
         # ---------------------------------------------------------
         # 7. Create prediction record
         # ---------------------------------------------------------
-        pred_record = Prediction(
+        model_name = "Markov Baseline"
+        model_version = "1.0"
+        attack_version = "v14.1"
+        fingerprint = prediction_input_fingerprint(
             incident_id=incident_uuid,
-            model_name="Markov Baseline",
-            model_version="1.0",
-            attack_version="v14.1",
+            model_name=model_name,
+            model_version=model_version,
+            attack_version=attack_version,
+            observed_techniques=observed,
+        )
+        prediction_values = dict(
+            incident_id=incident_uuid,
+            model_name=model_name,
+            model_version=model_version,
+            attack_version=attack_version,
+            input_fingerprint=fingerprint,
 
             # JSONB-safe values
             observed_techniques=[
@@ -213,14 +229,18 @@ async def process_message(
         # ---------------------------------------------------------
         # 8. Save prediction
         # ---------------------------------------------------------
-        session.add(pred_record)
-
-        await session.commit()
-
-        logger.info(
-            f"Prediction successfully saved for "
-            f"incident {incident_id}"
+        result = await session.execute(
+            insert(Prediction)
+            .values(**prediction_values)
+            .on_conflict_do_nothing(constraint="uq_predictions_logical_input")
+            .returning(Prediction.id)
         )
+        await session.commit()
+        if result.scalar_one_or_none() is None:
+            logger.info("Prediction already persisted for incident %s; acknowledged retry", incident_id)
+        else:
+            logger.info("Prediction successfully saved for incident %s", incident_id)
+        return True
 
     except Exception as e:
 
@@ -229,6 +249,7 @@ async def process_message(
         )
 
         await session.rollback()
+        return False
 
 
 async def consume():
@@ -263,10 +284,22 @@ async def consume():
         bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
         group_id="prediction-worker-group",
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        enable_auto_commit=False,
+    )
+    producer = AIOKafkaProducer(
+        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda value: json.dumps(value, default=str).encode("utf-8"),
+    )
+    retry_state = RedisRetryState(
+        settings.REDIS_URL,
+        "prediction",
+        max_attempts=settings.RETRY_MAX_ATTEMPTS,
+        base_delay_seconds=settings.RETRY_BASE_DELAY_SECONDS,
+        max_delay_seconds=settings.RETRY_MAX_DELAY_SECONDS,
     )
 
     await consumer.start()
+    await producer.start()
 
     try:
 
@@ -282,13 +315,48 @@ async def consume():
                 f"offset={msg.offset}"
             )
 
-            async with async_session() as session:
+            message_key = retry_state.message_key(msg.topic, msg.partition, msg.offset)
+            while True:
+                async with async_session() as session:
+                    processed = await process_message(msg.value, session, service)
+                if processed:
+                    # Offset advances only after the insert/upsert transaction is durable.
+                    await retry_state.acknowledge(message_key)
+                    await consumer.commit()
+                    break
 
-                await process_message(
-                    msg.value,
-                    session,
-                    service,
+                decision = await retry_state.record_failure(
+                    message_key,
+                    RuntimeError("prediction processing was not durable"),
                 )
+                if decision.exhausted:
+                    try:
+                        await producer.send_and_wait(
+                            settings.FAILED_TOPIC,
+                            {
+                                "failure_id": str(uuid.uuid4()),
+                                "received_at": datetime.now(timezone.utc).isoformat(),
+                                "failure_stage": "prediction",
+                                "failure_reason_code": "RETRY_EXHAUSTED",
+                                "failure_description": "Prediction failed after bounded retries",
+                                "retryable": False,
+                                "retry_count": decision.attempt,
+                                "safe_metadata": {
+                                    "topic": msg.topic,
+                                    "partition": msg.partition,
+                                    "offset": msg.offset,
+                                },
+                            },
+                        )
+                    except Exception:
+                        logger.exception("Prediction DLQ publish failed; retaining Kafka offset")
+                        await asyncio.sleep(decision.delay_seconds)
+                        continue
+                    logger.error("Retry exhausted for prediction message %s", message_key)
+                    await retry_state.acknowledge(message_key)
+                    await consumer.commit()
+                    break
+                await asyncio.sleep(decision.delay_seconds)
 
     except asyncio.CancelledError:
 
@@ -299,6 +367,8 @@ async def consume():
     finally:
 
         await consumer.stop()
+        await producer.stop()
+        await retry_state.close()
         await engine.dispose()
 
 

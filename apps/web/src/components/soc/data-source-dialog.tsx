@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import React, { useEffect, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -9,20 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCreateDataSource, useUpdateDataSource, DataSource } from "@/hooks/use-data-sources";
+import {
+  dataSourceTypes,
+  DataSource,
+  useCreateDataSource,
+  useUpdateDataSource,
+} from "@/hooks/use-data-sources";
 import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters").max(255),
-  source_type: z.enum([
-    "synthetic",
-    "http_json",
-    "linux_syslog",
-    "network_flow",
-    "windows_event",
-    "kubernetes_audit",
-    "aws_cloudtrail",
-  ]),
+  source_type: z.enum(dataSourceTypes),
   environment: z.string().min(2, "Environment must be at least 2 characters").max(50),
   description: z.string().max(1000).optional(),
   enabled: z.boolean(),
@@ -42,14 +39,15 @@ export function DataSourceDialog({
 }: DataSourceDialogProps) {
   const createMutation = useCreateDataSource();
   const updateMutation = useUpdateDataSource();
+  const [provisionedKey, setProvisionedKey] = useState<string | null>(null);
 
   const isEditMode = !!dataSource;
 
   const {
     register,
     handleSubmit,
+    control,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<z.infer<typeof formSchema>>({
@@ -64,8 +62,13 @@ export function DataSourceDialog({
     },
   });
 
-  const selectedType = watch("source_type");
-  const isEnabled = watch("enabled");
+  const selectedType = useWatch({ control, name: "source_type" });
+  const isEnabled = useWatch({ control, name: "enabled" });
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) setProvisionedKey(null);
+    onOpenChange(nextOpen);
+  };
 
   // Load default values when in edit mode
   useEffect(() => {
@@ -73,11 +76,11 @@ export function DataSourceDialog({
       if (dataSource) {
         reset({
           name: dataSource.name,
-          source_type: dataSource.source_type as any,
+          source_type: dataSource.source_type,
           environment: dataSource.environment,
           description: dataSource.description || "",
           enabled: dataSource.enabled,
-          secret_reference: (dataSource as any).secret_reference || "",
+          secret_reference: dataSource.secret_reference || "",
         });
       } else {
         reset({
@@ -99,10 +102,10 @@ export function DataSourceDialog({
           id: dataSource.id,
           updates: {
             name: values.name,
-            description: values.description || null as any,
+            description: values.description || null,
             enabled: values.enabled,
             environment: values.environment,
-            secret_reference: values.secret_reference || null as any,
+            secret_reference: values.secret_reference || null,
           },
         },
         {
@@ -113,9 +116,7 @@ export function DataSourceDialog({
       );
     } else {
       createMutation.mutate(values, {
-        onSuccess: () => {
-          onOpenChange(false);
-        },
+        onSuccess: (createdSource) => setProvisionedKey(createdSource.api_key),
       });
     }
   };
@@ -123,7 +124,7 @@ export function DataSourceDialog({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="bg-zinc-950 border-zinc-900 text-zinc-100 sm:max-w-[450px] font-mono">
         <DialogHeader className="border-b border-zinc-900 pb-3">
           <DialogTitle className="text-sm font-bold uppercase tracking-wider text-zinc-300">
@@ -136,7 +137,16 @@ export function DataSourceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4 text-xs">
+        {provisionedKey ? (
+          <section className="rounded-md border border-amber-800/60 bg-amber-950/25 p-3" aria-live="polite">
+            <p className="text-xs font-semibold text-amber-200">Store this ingestion API key now</p>
+            <p className="mt-1 text-[10px] leading-4 text-amber-100/80">For security, AutoSOC will not show this key again. It is never stored in the browser or returned by source-list APIs.</p>
+            <Input readOnly value={provisionedKey} aria-label="New ingestion API key" className="mt-2 font-mono text-[11px]" />
+            <Button type="button" variant="outline" className="mt-2 h-8 text-xs" onClick={() => handleOpenChange(false)}>I stored the key</Button>
+          </section>
+        ) : null}
+
+        {!provisionedKey ? <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4 text-xs">
           {/* Source Name */}
           <div className="space-y-1.5">
             <Label htmlFor="name" className="text-[10px] text-zinc-500 uppercase font-semibold">
@@ -161,7 +171,7 @@ export function DataSourceDialog({
             <Select
               disabled={isEditMode}
               value={selectedType}
-              onValueChange={(val) => setValue("source_type", val as any)}
+              onValueChange={(val) => setValue("source_type", val as z.infer<typeof formSchema>["source_type"])}
             >
               <SelectTrigger className="bg-zinc-950 border-zinc-900 text-xs capitalize">
                 <SelectValue placeholder="Select type" />
@@ -243,7 +253,7 @@ export function DataSourceDialog({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
               className="h-8 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200"
             >
               Cancel
@@ -265,7 +275,7 @@ export function DataSourceDialog({
               )}
             </Button>
           </div>
-        </form>
+        </form> : null}
       </DialogContent>
     </Dialog>
   );

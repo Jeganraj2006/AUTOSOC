@@ -20,9 +20,10 @@ import { AlertCorrelationPanel } from "@/components/incidents/alert-correlation-
 import { PredictionPanel } from "@/components/incidents/prediction-panel";
 import { AgentInvestigationPanel } from "@/components/incidents/agent-investigation-panel";
 import { ResponsePanel } from "@/components/incidents/response-panel";
-import { ArrowLeft, AlertCircle, RefreshCw, Send, ShieldAlert, Clock, User, MessageSquare } from "lucide-react";
+import { ArrowLeft, AlertCircle, RefreshCw, Send, Clock, User, MessageSquare } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDistanceToNow } from "date-fns";
+import { canManageTriage } from "@/lib/monitoring";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   new: ["triaged", "false_positive", "closed"],
@@ -53,10 +54,7 @@ export default function IncidentDetailPage() {
   const [transitionReason, setTransitionReason] = useState("");
 
   // Role authorization checks
-  const isAuthorizedToEdit =
-    currentUser?.is_superuser ||
-    currentUser?.roles.includes("admin") ||
-    currentUser?.roles.includes("soc_analyst");
+  const isAuthorizedToEdit = canManageTriage(currentUser);
 
   const handleStatusSelect = (targetStatus: string) => {
     if (targetStatus === "false_positive" || targetStatus === "closed") {

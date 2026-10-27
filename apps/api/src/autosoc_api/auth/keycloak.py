@@ -28,7 +28,10 @@ class KeycloakJWTValidator:
         except Exception as exc:
             # Authentication must fail closed.  In particular, an unreachable JWKS
             # endpoint is never a reason to trust unverified token claims.
-            logger.warning(f"Keycloak token validation failed: {exc}")
+            # Authentication failures can be triggered by attacker-controlled
+            # bearer strings.  Log only the exception class so no token-derived
+            # content can be copied into application logs.
+            logger.warning("Keycloak token validation failed: %s", type(exc).__name__)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired access token",

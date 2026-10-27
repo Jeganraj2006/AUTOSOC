@@ -5,30 +5,48 @@ import { useSession } from "next-auth/react";
 export interface DataSource {
   id: string;
   name: string;
-  source_type: string;
+  source_type: DataSourceType;
   description?: string;
   enabled: boolean;
   environment: string;
+  secret_reference?: string;
   status: string;
   created_at: string;
   updated_at: string;
 }
 
+export interface ProvisionedDataSource extends DataSource {
+  /** Returned only once by POST /data-sources; never present in list responses. */
+  api_key: string;
+}
+
 export interface DataSourceCreate {
   name: string;
-  source_type: string;
-  description?: string;
+  source_type: DataSourceType;
+  description?: string | null;
   enabled?: boolean;
   environment?: string;
-  secret_reference?: string;
+  secret_reference?: string | null;
 }
+
+export const dataSourceTypes = [
+  "synthetic",
+  "http_json",
+  "linux_syslog",
+  "network_flow",
+  "windows_event",
+  "kubernetes_audit",
+  "aws_cloudtrail",
+] as const;
+
+export type DataSourceType = (typeof dataSourceTypes)[number];
 
 export interface DataSourceUpdate {
   name?: string;
-  description?: string;
+  description?: string | null;
   enabled?: boolean;
   environment?: string;
-  secret_reference?: string;
+  secret_reference?: string | null;
 }
 
 export function useDataSources() {
@@ -52,7 +70,7 @@ export function useCreateDataSource() {
 
   return useMutation({
     mutationFn: (newSource: DataSourceCreate) =>
-      fetchApi<DataSource>("/data-sources", {
+      fetchApi<ProvisionedDataSource>("/data-sources", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,

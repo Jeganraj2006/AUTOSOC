@@ -1,123 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PredictionResult, predictionApi } from "@/lib/api/predictions";
-import { Badge } from "@/components/ui/badge";
+import { BrainCircuit, RefreshCw } from "lucide-react";
+import { useLatestPrediction, useRecomputePrediction } from "@/hooks/use-predictions";
+import { useMe } from "@/hooks/use-me";
+import { canManageTriage } from "@/lib/monitoring";
+import { formatTechniqueConfidence, predictionHasModelMetadata } from "@/lib/intelligence";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { AlertCircle, RefreshCw, Activity, Zap, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { OperationalState, RetryButton } from "@/components/ui/operational-state";
 
 export function PredictionPanel({ incidentId }: { incidentId: string }) {
-  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [recomputing, setRecomputing] = useState(false);
+  const { data: currentUser } = useMe();
+  const { data: prediction, isLoading, isError, isFetching, refetch } = useLatestPrediction(incidentId);
+  const recomputeMutation = useRecomputePrediction();
+  const canRecompute = canManageTriage(currentUser);
 
-  useEffect(() => {
-    loadPrediction();
-  }, [incidentId]);
-
-  const loadPrediction = async () => {
-    setLoading(true);
-    try {
-      const data = await predictionApi.getLatestPrediction(incidentId);
-      setPrediction(data);
-      setError("");
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        // Expected when no prediction exists yet
-        setError("No prediction data available yet.");
-      } else {
-        setError("Failed to load prediction.");
-      }
-    } finally {
-      setLoading(false);
-    }
+  const requestRecompute = () => {
+    if (!canRecompute) return;
+    recomputeMutation.mutate(incidentId);
   };
 
-  const handleRecompute = async () => {
-    setRecomputing(true);
-    try {
-      await predictionApi.recomputePrediction(incidentId);
-      // Wait a bit, then reload
-      setTimeout(() => loadPrediction(), 3000);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRecomputing(false);
-    }
-  };
+  if (isLoading) return <Card className="soc-surface border-0"><CardHeader><CardTitle>Attack prediction</CardTitle><CardDescription>Loading the persisted forecast for this incident.</CardDescription></CardHeader></Card>;
+  if (isError || !prediction) return <OperationalState kind="error" title="Prediction is unavailable" description="The incident forecast did not return a usable record. Retry the request or request a recompute if your role permits it." action={<div className="flex flex-wrap justify-center gap-2"><RetryButton onClick={() => refetch()} disabled={isFetching} /><Button onClick={requestRecompute} disabled={!canRecompute || recomputeMutation.isPending} variant="outline">Request recompute</Button></div>} />;
 
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Attack Progression</CardTitle>
-          <CardDescription>Loading forecast...</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  if (error || !prediction) {
-    return (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="space-y-1">
-            <CardTitle>Attack Progression</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleRecompute} disabled={recomputing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${recomputing ? 'animate-spin' : ''}`} />
-            Request Forecast
-          </Button>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="border-indigo-500/20 bg-indigo-500/5">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="space-y-1">
-          <CardTitle className="text-lg font-bold flex items-center text-indigo-400">
-            <Zap className="w-5 h-5 mr-2" />
-            Attack Progression Forecast
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Model: {prediction.model_name} v{prediction.model_version} • Confidence: {prediction.confidence}
-          </CardDescription>
-        </div>
-        <Button variant="ghost" size="sm" onClick={handleRecompute} disabled={recomputing}>
-          <RefreshCw className={`h-4 w-4 ${recomputing ? 'animate-spin' : ''}`} />
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {prediction.predicted_next_techniques.length > 0 ? (
-          <div className="space-y-3 mt-4">
-            <h4 className="text-sm font-medium text-slate-300">Predicted Next Steps:</h4>
-            {prediction.predicted_next_techniques.map((tech, idx) => (
-              <div key={idx} className="flex flex-col space-y-1">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="font-mono text-slate-200">{tech.technique_id}</span>
-                  <span className="text-xs text-indigo-300">{Math.round((tech.score || 0))}%</span>
-                </div>
-                <Progress value={tech.score || 0} className="h-1.5" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-sm text-slate-400 p-4 text-center border border-dashed rounded bg-slate-900/50">
-            Insufficient evidence for prediction.
-          </div>
-        )}
-
-        <div className="flex items-center space-x-2 text-xs text-slate-400 mt-4 p-2 bg-slate-900/50 rounded border border-slate-800">
-          <Info className="w-4 h-4 text-slate-500 flex-shrink-0" />
-          <p>{prediction.limitations}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <Card className="soc-surface gap-0 border-0 py-0"><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle className="flex items-center gap-2"><BrainCircuit className="size-5 text-primary" />Attack prediction</CardTitle><CardDescription className="mt-1">Persisted model output; predicted behavior is not a confirmed attack.</CardDescription></div><Button variant="outline" size="sm" onClick={requestRecompute} disabled={!canRecompute || recomputeMutation.isPending} title={canRecompute ? undefined : "Your role cannot request prediction recomputation."}><RefreshCw className={`mr-1.5 size-4 ${recomputeMutation.isPending ? "animate-spin" : ""}`} />Recompute</Button></CardHeader><CardContent className="space-y-5"><dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><div><dt className="text-xs text-muted-foreground">Prediction ID</dt><dd className="mt-1 break-all font-mono text-xs text-foreground">{prediction.prediction_id}</dd></div><div><dt className="text-xs text-muted-foreground">Generated</dt><dd className="mt-1 text-sm text-foreground">{new Date(prediction.generated_at).toLocaleString()}</dd></div><div><dt className="text-xs text-muted-foreground">Model</dt><dd className="mt-1 text-sm text-foreground">{predictionHasModelMetadata(prediction.model_name, prediction.model_version) ? `${prediction.model_name} (${prediction.model_version})` : "Not supplied"}</dd></div><div><dt className="text-xs text-muted-foreground">Escalation risk</dt><dd className="mt-1 text-sm text-foreground">{(prediction.escalation_risk_score * 100).toFixed(0)}%</dd></div></dl><div className="grid gap-5 lg:grid-cols-2"><section><h3 className="text-sm font-medium text-foreground">Observed techniques</h3>{prediction.observed_techniques.length ? <ul className="mt-3 flex flex-wrap gap-2">{prediction.observed_techniques.map((technique) => <li key={technique} className="rounded-md border border-border px-2 py-1 font-mono text-xs text-foreground">{technique}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No observed techniques were supplied.</p>}</section><section><h3 className="text-sm font-medium text-foreground">Predicted next techniques</h3>{prediction.predicted_next_techniques.length ? <ul className="mt-3 space-y-2">{prediction.predicted_next_techniques.map((technique) => <li key={technique.technique_id} className="rounded-md border border-border p-3"><p className="font-mono text-sm text-foreground">{technique.technique_id}</p><p className="mt-1 text-xs text-muted-foreground">{formatTechniqueConfidence(technique.probability, technique.score)}</p>{technique.predicted_tactic ? <p className="mt-1 text-xs text-muted-foreground">Tactic: {technique.predicted_tactic}</p> : null}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No next-technique candidates were supplied.</p>}</section></div><section className="rounded-lg border border-border p-4"><h3 className="text-sm font-medium text-foreground">Forecast limitations</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{prediction.limitations || "No model limitations were returned with this prediction."}</p></section>{recomputeMutation.isError ? <p className="text-sm text-destructive">The recompute request failed. No prediction output was changed by this interface.</p> : null}</CardContent></Card>;
 }

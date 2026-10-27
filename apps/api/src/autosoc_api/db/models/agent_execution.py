@@ -30,6 +30,9 @@ class AgentExecution(Base):
     
     current_step = Column(String, nullable=True)
     steps_completed = Column(Integer, default=0)
+    retry_count = Column(Integer, default=0, nullable=False)
+    node_statuses = Column(JSON, nullable=True)
+    node_timestamps = Column(JSON, nullable=True)
     
     model_provider = Column(String, nullable=True)
     model_name = Column(String, nullable=True)
@@ -43,6 +46,8 @@ class AgentExecution(Base):
     result_data = Column(JSON, nullable=True)
     
     failure_reason = Column(Text, nullable=True)
+    error_info = Column(JSON, nullable=True)
+    evidence_references = Column(JSON, nullable=True)
     trace_id = Column(String, nullable=True)
     
     incident = relationship("Incident", back_populates="agent_executions")

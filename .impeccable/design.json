@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "mode": "operate",
+  "system": "signal-ledger",
+  "defaultTheme": "dark",
+  "tokens": {
+    "accent": "cyan-blue",
+    "semantic": ["healthy", "warning", "critical", "ai-assisted"],
+    "radius": "restrained",
+    "density": "operational"
+  }
+}

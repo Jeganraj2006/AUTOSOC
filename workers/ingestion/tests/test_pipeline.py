@@ -109,5 +109,29 @@ async def test_archive_failure_triggers_retryable_error(mocks):
     call_args = publisher.publish_failed_event.call_args[0][0]
     assert call_args.retryable is True
     assert call_args.failure_stage == "archive"
-    
     health.update_source_health.assert_called_with("src-123", "failed")
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_has_bounded_exponential_backoff(mocks, monkeypatch):
+    publisher, archive, dedup, health = mocks
+    pipeline = IngestionPipeline(
+        publisher,
+        archive,
+        dedup,
+        health,
+        retry_max_attempts=3,
+        retry_base_delay_seconds=2,
+        retry_max_delay_seconds=3,
+    )
+    operation = AsyncMock(side_effect=RuntimeError("temporary archive failure"))
+    sleep = AsyncMock()
+    monkeypatch.setattr("autosoc_ingestion.services.pipeline.asyncio.sleep", sleep)
+
+    succeeded, error, attempts = await pipeline._retry("archive", operation)
+
+    assert succeeded is False
+    assert isinstance(error, RuntimeError)
+    assert attempts == 3
+    assert operation.await_count == 3
+    assert [call.args[0] for call in sleep.await_args_list] == [2, 3]

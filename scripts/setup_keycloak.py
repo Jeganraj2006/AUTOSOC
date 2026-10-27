@@ -32,7 +32,7 @@ class DevelopmentAccount:
 DEVELOPMENT_ACCOUNTS = (
     DevelopmentAccount("autosoc_admin", "Administrator", "administrator"),
     DevelopmentAccount("autosoc_analyst", "Security Analyst", "soc_analyst"),
-    DevelopmentAccount("autosoc_viewer", "Read-only Viewer", "auditor"),
+    DevelopmentAccount("autosoc_viewer", "Read-only Viewer", "viewer"),
 )
 
 
@@ -143,7 +143,9 @@ def generate_password() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(32))
 
 
-def create_or_update_development_user(token: str, account: DevelopmentAccount, password: str) -> str:
+def create_or_update_development_user(
+    token: str, account: DevelopmentAccount, password: str, rotate_passwords: bool
+) -> tuple[str, bool]:
     users_url = f"{keycloak_url()}/admin/realms/{REALM_NAME}/users"
     response = requests.get(users_url, headers=headers(token), params={"username": account.username, "exact": "true"}, timeout=10)
     response.raise_for_status()
@@ -156,22 +158,32 @@ def create_or_update_development_user(token: str, account: DevelopmentAccount, p
     }
     if users:
         user_id = str(users[0]["id"])
-        response = requests.put(f"{users_url}/{user_id}", headers=headers(token), json={**users[0], **payload}, timeout=10)
-        response.raise_for_status()
+        # Reconcile the account and role without silently replacing a working
+        # local credential on every repeatable setup invocation.  A deliberate
+        # rotation is opt-in and the new password remains outside the repo.
+        existing_payload = {**users[0], "enabled": True, "emailVerified": True}
         response = requests.put(
-            f"{users_url}/{user_id}/reset-password",
+            f"{users_url}/{user_id}",
             headers=headers(token),
-            json={"type": "password", "value": password, "temporary": False},
+            json=existing_payload,
             timeout=10,
         )
         response.raise_for_status()
-        return user_id
+        if rotate_passwords:
+            response = requests.put(
+                f"{users_url}/{user_id}/reset-password",
+                headers=headers(token),
+                json={"type": "password", "value": password, "temporary": False},
+                timeout=10,
+            )
+            response.raise_for_status()
+        return user_id, rotate_passwords
 
     response = requests.post(users_url, headers=headers(token), json=payload, timeout=10)
     response.raise_for_status()
     response = requests.get(users_url, headers=headers(token), params={"username": account.username, "exact": "true"}, timeout=10)
     response.raise_for_status()
-    return str(response.json()[0]["id"])
+    return str(response.json()[0]["id"]), True
 
 
 def assign_realm_role(token: str, user_id: str, role: dict[str, Any]) -> None:
@@ -221,13 +233,18 @@ def main() -> None:
         token = get_admin_token()
         create_realm(token)
         create_or_update_client(token)
+        rotate_passwords = os.getenv("AUTOSOC_ROTATE_DEV_PASSWORDS", "").lower() in {"1", "true", "yes"}
         credentials: list[tuple[DevelopmentAccount, str]] = []
         for account in DEVELOPMENT_ACCOUNTS:
             password = generate_password()
-            user_id = create_or_update_development_user(token, account, password)
+            user_id, password_changed = create_or_update_development_user(
+                token, account, password, rotate_passwords
+            )
             assign_realm_role(token, user_id, ensure_realm_role(token, account.realm_role))
-            credentials.append((account, password))
-        write_credential_handoff(credentials)
+            if password_changed:
+                credentials.append((account, password))
+        if credentials:
+            write_credential_handoff(credentials)
     except (requests.HTTPError, RuntimeError, KeyError, IndexError) as exc:
         print(f"Keycloak bootstrap failed: {exc}", file=sys.stderr)
         sys.exit(1)
